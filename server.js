@@ -4,14 +4,14 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const axios = require('axios');
+const nodemailer = require('nodemailer');
+const brevo = require('@getbrevo/brevo');
 // const session = require('express-session');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const { MongoClient, ObjectId } = require('mongodb');
 const Razorpay = require('razorpay');
 const PDFDocument = require('pdfkit');
-const bcrypt = require('bcrypt');
 
 // Configure Multer
 const storage = multer.diskStorage({
@@ -32,7 +32,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Middleware
 app.use(cors());
@@ -76,29 +76,6 @@ let bookingModificationsCollection;
 let waitlistCollection;
 let otps = {}; // Keep OTPs in memory (they are temporary)
 
-// Password Hashing Helper Functions
-const SALT_ROUNDS = 10;
-
-async function hashPassword(password) {
-  try {
-    const salt = await bcrypt.genSalt(SALT_ROUNDS);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    return hashedPassword;
-  } catch (error) {
-    console.error('Error hashing password:', error);
-    throw error;
-  }
-}
-
-async function comparePassword(plainPassword, hashedPassword) {
-  try {
-    return await bcrypt.compare(plainPassword, hashedPassword);
-  } catch (error) {
-    console.error('Error comparing password:', error);
-    return false;
-  }
-}
-
 // MongoDB Connection
 const mongoClient = new MongoClient(MONGODB_URI);
 
@@ -130,11 +107,10 @@ async function connectDB() {
     // Ensure admin exists
     const adminExists = await usersCollection.findOne({ role: 'admin' });
     if (!adminExists) {
-      const hashedPassword = await hashPassword('admin123');
       await usersCollection.insertOne({
         name: 'Admin User',
         email: 'admin@gmail.com',
-        password: hashedPassword,
+        password: 'admin123',
         role: 'admin',
         phone: '0000000000',
         createdAt: new Date()
@@ -145,6 +121,15 @@ async function connectDB() {
     console.error('❌ MongoDB Connection Error:', error);
     process.exit(1);
   }
+}
+
+// Get Base URL for emails and links
+function getBaseUrl() {
+  if (process.env.BASE_URL) {
+    return process.env.BASE_URL;
+  }
+  // Default to localhost for development
+  return `http://localhost:${PORT}`;
 }
 
 // Initialize Razorpay
@@ -196,31 +181,30 @@ async function updateAllPricesToOne() {
 
 // Helper: Read/Write Data (kept for backward compatibility, not used with MongoDB)
 
-// Brevo Email Service
-const sendBrevoEmail = async (to, subject, html) => {
+// Brevo Email Configuration
+const apiInstance = new brevo.TransactionalEmailsApi();
+apiInstance.setApiKey(brevo.ApiKeyAuth, process.env.BREVO_API_KEY);
+
+// Helper function to send emails using Brevo
+async function sendBrevoEmail(to, subject, htmlContent) {
   try {
-    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
-      sender: {
-        name: 'Event Hall Booking',
-        email: process.env.SMTP_EMAIL
-      },
-      to: [{ email: to }],
-      subject: subject,
-      htmlContent: html
-    }, {
-      headers: {
-        'api-key': process.env.BREVO_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    console.log('✅ Email sent successfully via Brevo');
-    return response.data;
+    const sendSmtpEmail = new brevo.SendSmtpEmail();
+    sendSmtpEmail.subject = subject;
+    sendSmtpEmail.htmlContent = htmlContent;
+    sendSmtpEmail.sender = {
+      name: 'Event Hall Booking',
+      email: 'noreply@eventhallbooking.com'
+    };
+    sendSmtpEmail.to = [{ email: to }];
+
+    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log('✅ Email sent via Brevo:', data);
+    return data;
   } catch (error) {
-    console.error('⚠️ Brevo Email Error:', error.response?.data || error.message);
-    // Don't throw - allow app to continue even if email fails
-    return { error: true, message: 'Email failed but registration continues' };
+    console.error('❌ Brevo Error:', error);
+    throw error;
   }
-};
+}
 
 // Remove global currentUser variable
 // let currentUser = null;
@@ -237,7 +221,7 @@ app.post('/api/register', async (req, res) => {
   try {
     const existingUser = await usersCollection.findOne({ email });
     if (existingUser) {
-      return res.status(409).json({ success: false, message: 'Email already exists' });
+      return res.status(400).json({ success: false, message: 'Email already exists' });
     }
 
     // Generate 6 digit OTP
@@ -252,12 +236,11 @@ app.post('/api/register', async (req, res) => {
     };
 
     try {
-      const htmlContent = `
-        <h2>Verify Your Signup</h2>
-        <p>Your OTP for account verification is: <strong>${otp}</strong></p>
-        <p>This OTP is valid for 10 minutes.</p>
-      `;
-      await sendBrevoEmail(email, 'Verify your Signup - Event Hall Booking', htmlContent);
+      await sendBrevoEmail(
+        email,
+        'Verify your Signup - Event Hall Booking',
+        `<p>Your OTP for account verification is: <strong>${otp}</strong></p>`
+      );
       res.json({ success: true, requireOtp: true, message: 'OTP sent to email' });
     } catch (error) {
       console.error('Brevo Error:', error);
@@ -280,17 +263,14 @@ app.post('/api/admin/create-owner', authenticateToken, async (req, res) => {
   try {
     const existingUser = await usersCollection.findOne({ email });
     if (existingUser) {
-      return res.status(409).json({ success: false, message: 'Email already exists' });
+      return res.status(400).json({ success: false, message: 'Email already exists' });
     }
-
-    // Hash password before storing
-    const hashedPassword = await hashPassword(password);
 
     const newOwner = {
       name,
       email,
       phone,
-      password: hashedPassword,
+      password, // In prod, hash this!
       role: 'owner',
       createdAt: new Date()
     };
@@ -299,18 +279,21 @@ app.post('/api/admin/create-owner', authenticateToken, async (req, res) => {
 
     // Send Welcome Email
     try {
-      const htmlContent = `
-        <h1>Welcome, ${name}!</h1>
-        <p>Your Owner account has been created by the administrator.</p>
-        <p>You can now log in to list and manage your event halls.</p>
-        <br>
-        <p><strong>Login Credentials:</strong></p>
-        <p>Email: ${email}</p>
-        <p>Password: ${password}</p>
-        <br>
-        <p><a href="http://localhost:3000/login.html">Click here to Login</a></p>
-      `;
-      await sendBrevoEmail(email, 'Welcome to Event Hall Booking - Owner Account', htmlContent);
+      await sendBrevoEmail(
+        email,
+        'Welcome to Event Hall Booking - Owner Account',
+        `
+          <h1>Welcome, ${name}!</h1>
+          <p>Your Owner account has been created by the administrator.</p>
+          <p>You can now log in to list and manage your event halls.</p>
+          <br>
+          <p><strong>Login Credentials:</strong></p>
+          <p>Email: ${email}</p>
+          <p>Password: ${password}</p>
+          <br>
+          <p><a href="${getBaseUrl()}/login.html">Click here to Login</a></p>
+        `
+      );
       res.json({ success: true, message: 'Owner created and email sent' });
     } catch (error) {
       console.error('Brevo Error:', error);
@@ -328,22 +311,21 @@ app.post('/api/verify-signup', async (req, res) => {
   const storedOtp = otps[email];
 
   if (!storedOtp || storedOtp.type !== 'signup') {
-    return res.status(422).json({ success: false, message: 'No signup verification pending for this email' });
+    return res.status(400).json({ success: false, message: 'No signup verification pending for this email' });
   }
 
   if (Date.now() > storedOtp.expires) {
     delete otps[email];
-    return res.status(410).json({ success: false, message: 'OTP expired' });
+    return res.status(400).json({ success: false, message: 'OTP expired' });
   }
 
   if (storedOtp.code !== otp) {
-    return res.status(422).json({ success: false, message: 'Invalid OTP' });
+    return res.status(400).json({ success: false, message: 'Invalid OTP' });
   }
 
   try {
-    // Create User with hashed password
+    // Create User
     const newUser = storedOtp.userData;
-    newUser.password = await hashPassword(newUser.password);
     const result = await usersCollection.insertOne(newUser);
 
     // Generate Token
@@ -362,19 +344,12 @@ app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await usersCollection.findOne({ email });
+    const user = await usersCollection.findOne({ email, password });
 
     if (user) {
-      // Compare password with hashed password
-      const isPasswordValid = await comparePassword(password, user.password);
-      
-      if (isPasswordValid) {
-        // Generate Token
-        const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, name: user.name }, process.env.JWT_SECRET);
-        res.json({ success: true, token, user: { ...user, password: undefined } });
-      } else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
-      }
+      // Generate Token
+      const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, name: user.name }, process.env.JWT_SECRET);
+      res.json({ success: true, token, user: { ...user, password: undefined } });
     } else {
       res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -414,12 +389,11 @@ app.post('/api/forgot-password', async (req, res) => {
     };
 
     try {
-      const htmlContent = `
-        <h2>Password Reset Request</h2>
-        <p>Your OTP for password reset is: <strong>${otp}</strong></p>
-        <p>This OTP is valid for 10 minutes.</p>
-      `;
-      await sendBrevoEmail(email, 'Password Reset OTP - Event Hall Booking', htmlContent);
+      await sendBrevoEmail(
+        email,
+        'Password Reset OTP - Event Hall Booking',
+        `<p>Your OTP for password reset is: <strong>${otp}</strong></p><p>It is valid for 10 minutes.</p>`
+      );
       res.json({ success: true, message: 'OTP sent to email' });
     } catch (error) {
       console.error('Brevo Error:', error);
@@ -436,18 +410,18 @@ app.post('/api/verify-otp', (req, res) => {
   const storedOtp = otps[email];
 
   if (!storedOtp) {
-    return res.status(422).json({ success: false, message: 'No OTP requested or expired' });
+    return res.status(400).json({ success: false, message: 'No OTP requested or expired' });
   }
 
   if (Date.now() > storedOtp.expires) {
     delete otps[email];
-    return res.status(410).json({ success: false, message: 'OTP expired' });
+    return res.status(400).json({ success: false, message: 'OTP expired' });
   }
 
   if (storedOtp.code === otp) {
     res.json({ success: true, message: 'OTP verified' });
   } else {
-    res.status(422).json({ success: false, message: 'Invalid OTP' });
+    res.status(400).json({ success: false, message: 'Invalid OTP' });
   }
 });
 
@@ -456,13 +430,11 @@ app.post('/api/reset-password', async (req, res) => {
   const storedOtp = otps[email];
 
   if (!storedOtp || storedOtp.code !== otp || Date.now() > storedOtp.expires) {
-    return res.status(410).json({ success: false, message: 'Invalid or expired OTP' });
+    return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
   }
 
   try {
-    // Hash new password before storing
-    const hashedPassword = await hashPassword(newPassword);
-    const result = await usersCollection.updateOne({ email }, { $set: { password: hashedPassword } });
+    const result = await usersCollection.updateOne({ email }, { $set: { password: newPassword } });
 
     if (result.matchedCount > 0) {
       delete otps[email]; // Consume OTP
@@ -879,7 +851,7 @@ app.get('/api/halls/:id/availability', async (req, res) => {
   const { from, to } = req.query;
 
   if (!from || !to) {
-    return res.status(422).json({ success: false, message: 'from and to dates are required' });
+    return res.status(400).json({ success: false, message: 'from and to dates are required' });
   }
 
   try {
@@ -895,7 +867,7 @@ app.get('/api/halls/:id/availability', async (req, res) => {
     end.setHours(0, 0, 0, 0);
 
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-      return res.status(422).json({ success: false, message: 'Invalid date range' });
+      return res.status(400).json({ success: false, message: 'Invalid date range' });
     }
 
     const normalizedBlocked = Array.isArray(hall.blockedDates)
@@ -939,11 +911,11 @@ app.post('/api/halls/:id/block-dates', authenticateToken, async (req, res) => {
   const { dates, action } = req.body;
 
   if (!Array.isArray(dates) || dates.length === 0) {
-    return res.status(422).json({ success: false, message: 'dates array is required' });
+    return res.status(400).json({ success: false, message: 'dates array is required' });
   }
 
   if (!['block', 'unblock'].includes(action)) {
-    return res.status(422).json({ success: false, message: 'action must be block or unblock' });
+    return res.status(400).json({ success: false, message: 'action must be block or unblock' });
   }
 
   try {
@@ -986,7 +958,7 @@ app.post('/api/halls/:id/price-quote', async (req, res) => {
   const { date, startDate, endDate, guestCount, selectedAddons } = req.body;
 
   if (!date && !startDate) {
-    return res.status(422).json({ success: false, message: 'date or startDate is required' });
+    return res.status(400).json({ success: false, message: 'date or startDate is required' });
   }
 
   try {
@@ -1183,7 +1155,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
   } = req.body;
 
   if (!hallId || (!date && !startDate)) {
-    return res.status(422).json({ success: false, message: 'hallId and date (or startDate) are required' });
+    return res.status(400).json({ success: false, message: 'hallId and date (or startDate) are required' });
   }
 
   try {
@@ -1205,7 +1177,7 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
       // Check availability for entire range
       const availabilityCheck = await checkDateRangeAvailability(hallObjectId, normalizedStartDate, normalizedEndDate);
       if (!availabilityCheck.available) {
-        return res.status(409).json({ success: false, message: availabilityCheck.message });
+        return res.status(400).json({ success: false, message: availabilityCheck.message });
       }
     } else {
       // Single date booking (backward compatibility)
@@ -1228,13 +1200,13 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
       });
 
       if (existingBooking) {
-        return res.status(409).json({ success: false, message: 'Hall is already booked on this date' });
+        return res.status(400).json({ success: false, message: 'Hall is already booked on this date' });
       }
 
       const isBlocked = Array.isArray(hall.blockedDates) &&
         hall.blockedDates.map(normalizeDateString).includes(normalizedStartDate);
       if (isBlocked) {
-        return res.status(409).json({ success: false, message: 'Hall is blocked on this date' });
+        return res.status(400).json({ success: false, message: 'Hall is blocked on this date' });
       }
     }
 
@@ -1413,7 +1385,7 @@ app.post('/api/bookings/:id/request-date-change', authenticateToken, async (req,
   const { newDate, newStartDate, newEndDate, reason } = req.body;
 
   if (!newDate && !newStartDate) {
-    return res.status(422).json({ success: false, message: 'newDate or newStartDate is required' });
+    return res.status(400).json({ success: false, message: 'newDate or newStartDate is required' });
   }
 
   try {
@@ -1429,7 +1401,7 @@ app.post('/api/bookings/:id/request-date-change', authenticateToken, async (req,
     }
 
     if (booking.status === 'cancelled') {
-      return res.status(422).json({ success: false, message: 'Cannot modify cancelled booking' });
+      return res.status(400).json({ success: false, message: 'Cannot modify cancelled booking' });
     }
 
     const hall = await hallsCollection.findOne({ _id: booking.hallId });
@@ -1448,13 +1420,13 @@ app.post('/api/bookings/:id/request-date-change', authenticateToken, async (req,
       const normalizedOldEnd = booking.isMultiDay ? normalizeDateString(booking.endDate) : normalizedOldStart;
 
       if (normalizedNewStart === normalizedOldStart && normalizedNewEnd === normalizedOldEnd) {
-        return res.status(422).json({ success: false, message: 'New date range must be different from current range' });
+        return res.status(400).json({ success: false, message: 'New date range must be different from current range' });
       }
 
       // Check availability for new range
       const availabilityCheck = await checkDateRangeAvailability(booking.hallId, normalizedNewStart, normalizedNewEnd);
       if (!availabilityCheck.available) {
-        return res.status(409).json({ success: false, message: availabilityCheck.message });
+        return res.status(400).json({ success: false, message: availabilityCheck.message });
       }
 
       oldValue = { startDate: normalizedOldStart, endDate: normalizedOldEnd };
@@ -1465,7 +1437,7 @@ app.post('/api/bookings/:id/request-date-change', authenticateToken, async (req,
       const normalizedOldDate = normalizeDateString(booking.startDate || booking.date);
 
       if (normalizedNewDate === normalizedOldDate) {
-        return res.status(422).json({ success: false, message: 'New date must be different from current date' });
+        return res.status(400).json({ success: false, message: 'New date must be different from current date' });
       }
 
       // Check availability
@@ -1485,14 +1457,14 @@ app.post('/api/bookings/:id/request-date-change', authenticateToken, async (req,
       });
 
       if (existingBooking) {
-        return res.status(409).json({ success: false, message: 'New date is already booked' });
+        return res.status(400).json({ success: false, message: 'New date is already booked' });
       }
 
       const isBlocked = Array.isArray(hall.blockedDates) &&
         hall.blockedDates.map(normalizeDateString).includes(normalizedNewDate);
 
       if (isBlocked) {
-        return res.status(409).json({ success: false, message: 'New date is blocked by owner' });
+        return res.status(400).json({ success: false, message: 'New date is blocked by owner' });
       }
 
       oldValue = normalizedOldDate;
@@ -1529,7 +1501,7 @@ app.post('/api/bookings/:id/request-addon-change', authenticateToken, async (req
   const { addons, reason } = req.body;
 
   if (!Array.isArray(addons)) {
-    return res.status(422).json({ success: false, message: 'addons array is required' });
+    return res.status(400).json({ success: false, message: 'addons array is required' });
   }
 
   try {
@@ -1545,7 +1517,7 @@ app.post('/api/bookings/:id/request-addon-change', authenticateToken, async (req
     }
 
     if (booking.status === 'cancelled') {
-      return res.status(422).json({ success: false, message: 'Cannot modify cancelled booking' });
+      return res.status(400).json({ success: false, message: 'Cannot modify cancelled booking' });
     }
 
     const hall = await hallsCollection.findOne({ _id: booking.hallId });
@@ -1602,7 +1574,7 @@ app.post('/api/bookings/:id/cancel', authenticateToken, async (req, res) => {
     }
 
     if (booking.status === 'cancelled') {
-      return res.status(422).json({ success: false, message: 'Booking is already cancelled' });
+      return res.status(400).json({ success: false, message: 'Booking is already cancelled' });
     }
 
     // Calculate refund based on cancellation policy
@@ -1688,7 +1660,7 @@ app.post('/api/bookings/modifications/:id/approve', authenticateToken, async (re
   const { action } = req.body; // 'approve' or 'reject'
 
   if (!['approve', 'reject'].includes(action)) {
-    return res.status(422).json({ success: false, message: 'action must be approve or reject' });
+    return res.status(400).json({ success: false, message: 'action must be approve or reject' });
   }
 
   try {
@@ -1710,7 +1682,7 @@ app.post('/api/bookings/modifications/:id/approve', authenticateToken, async (re
     }
 
     if (modification.status !== 'pending') {
-      return res.status(422).json({ success: false, message: 'Modification request already processed' });
+      return res.status(400).json({ success: false, message: 'Modification request already processed' });
     }
 
     if (action === 'approve') {
@@ -1913,7 +1885,7 @@ app.post('/api/waitlist/join', authenticateToken, async (req, res) => {
   const { hallId, date } = req.body;
 
   if (!hallId || !date) {
-    return res.status(422).json({ success: false, message: 'hallId and date are required' });
+    return res.status(400).json({ success: false, message: 'hallId and date are required' });
   }
 
   try {
@@ -1936,7 +1908,7 @@ app.post('/api/waitlist/join', authenticateToken, async (req, res) => {
     });
 
     if (existingBooking) {
-      return res.status(409).json({ success: false, message: 'You already have a booking for this date' });
+      return res.status(400).json({ success: false, message: 'You already have a booking for this date' });
     }
 
     // Check if already on waitlist
@@ -1948,7 +1920,7 @@ app.post('/api/waitlist/join', authenticateToken, async (req, res) => {
     });
 
     if (existingWaitlist) {
-      return res.status(409).json({ success: false, message: 'You are already on the waitlist for this date' });
+      return res.status(400).json({ success: false, message: 'You are already on the waitlist for this date' });
     }
 
     // Check if date is actually booked (only allow waitlist if fully booked)
@@ -1959,7 +1931,7 @@ app.post('/api/waitlist/join', authenticateToken, async (req, res) => {
     });
 
     if (!isBooked) {
-      return res.status(422).json({ success: false, message: 'Hall is available. You can book directly.' });
+      return res.status(400).json({ success: false, message: 'Hall is available. You can book directly.' });
     }
 
     // Get current waitlist position
@@ -2138,20 +2110,23 @@ async function notifyWaitlistedUsers(hallId, date) {
 
       // Send email notification
       try {
-        const htmlContent = `
-          <h2>Good News! Your Waitlisted Hall is Now Available</h2>
-          <p>Hello ${user.name},</p>
-          <p>Great news! The hall you were waitlisted for is now available:</p>
-          <ul>
-            <li><strong>Hall:</strong> ${hall.name}</li>
-            <li><strong>Location:</strong> ${hall.location}</li>
-            <li><strong>Date:</strong> ${new Date(normalizedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</li>
-          </ul>
-          <p>This spot is available for the next 24 hours. Book now to secure your reservation!</p>
-          <p><a href="http://localhost:3000/booking.html?hallId=${hall._id}&date=${normalizedDate}" style="background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; margin-top: 1rem;">Book Now</a></p>
-          <p style="color: #6b7280; font-size: 0.9rem; margin-top: 2rem;">If you don't book within 24 hours, the next person on the waitlist will be notified.</p>
-        `;
-        await sendBrevoEmail(user.email, `Hall Available: ${hall.name} on ${new Date(normalizedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, htmlContent);
+        await sendBrevoEmail(
+          user.email,
+          `Hall Available: ${hall.name} on ${new Date(normalizedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+          `
+            <h2>Good News! Your Waitlisted Hall is Now Available</h2>
+            <p>Hello ${user.name},</p>
+            <p>Great news! The hall you were waitlisted for is now available:</p>
+            <ul>
+              <li><strong>Hall:</strong> ${hall.name}</li>
+              <li><strong>Location:</strong> ${hall.location}</li>
+              <li><strong>Date:</strong> ${new Date(normalizedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</li>
+            </ul>
+            <p>This spot is available for the next 24 hours. Book now to secure your reservation!</p>
+            <p><a href="${getBaseUrl()}/booking.html?hallId=${hall._id}&date=${normalizedDate}" style="background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; margin-top: 1rem;">Book Now</a></p>
+            <p style="color: #6b7280; font-size: 0.9rem; margin-top: 2rem;">If you don't book within 24 hours, the next person on the waitlist will be notified.</p>
+          `
+        );
       } catch (emailError) {
         console.error('Error sending waitlist notification email:', emailError);
       }
@@ -2234,7 +2209,7 @@ app.post('/api/bookings/check-multiple', async (req, res) => {
   const { hallIds, date } = req.body;
 
   if (!Array.isArray(hallIds) || !date) {
-    return res.status(422).json({ success: false, message: 'hallIds array and date are required' });
+    return res.status(400).json({ success: false, message: 'hallIds array and date are required' });
   }
 
   try {
@@ -2792,9 +2767,9 @@ async function start() {
     await connectDB();
     await removeDuplicateHalls();
     await updateAllPricesToOne();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Event Hall Booking System running on port ${PORT}`);
-      console.log(`📂 Open your app in your browser`);
+    app.listen(PORT, () => {
+      console.log(`🚀 Event Hall Booking System running on http://localhost:${PORT}`);
+      console.log(`📂 Open http://localhost:${PORT} in your browser`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

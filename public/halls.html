@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browse Halls - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">🏛️ Event Hall Booking</a>
+      <button class="navbar-toggle" onclick="toggleMobileMenu()">☰</button>
+      <ul class="navbar-nav">
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/halls.html">Halls</a></li>
+        <li><a href="/login.html">Login</a></li>
+        <li><a href="/signup.html">Sign Up</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container" style="padding: 2rem 0;">
+    <h1 style="margin-bottom: 2rem;">Browse Event Halls</h1>
+
+    <!-- Filters -->
+    <div class="filters">
+      <div class="filter-group">
+        <label>Category:</label>
+        <select id="categoryFilter" onchange="applyFilters()">
+          <option value="all">All Categories</option>
+          <option value="Party Hall">Party Hall</option>
+          <option value="Birthday Hall">Birthday Hall</option>
+          <option value="Reception Hall">Reception Hall</option>
+          <option value="Marriage Hall">Marriage Hall</option>
+        </select>
+
+        <label>Min Price:</label>
+        <input type="number" id="minPrice" placeholder="Min" onchange="applyFilters()">
+
+        <label>Max Price:</label>
+        <input type="number" id="maxPrice" placeholder="Max" onchange="applyFilters()">
+
+        <label>Location:</label>
+        <input type="text" id="locationFilter" placeholder="City or State" onchange="applyFilters()">
+
+        <label>Guests:</label>
+        <input type="number" id="guestFilter" placeholder="Number of guests" min="1" onchange="applyFilters()">
+
+        <label>Search:</label>
+        <input type="text" id="searchFilter" placeholder="Search halls..." onchange="applyFilters()">
+
+        <label>Available on:</label>
+        <input type="date" id="dateFilter" onchange="applyFilters()">
+
+        <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+        <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+        <button class="btn btn-secondary" onclick="getNearbyHalls()">📍 Near Me</button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div style="margin: 2rem 0;">
+      <p id="resultsCount" style="color: #6b7280;"></p>
+    </div>
+
+    <!-- Halls Grid -->
+    <div id="hallsGrid" class="grid grid-3">
+      <!-- Loading -->
+      <div class="loading" style="grid-column: 1 / -1;">
+        <div class="spinner"></div>
+        <p>Loading halls...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison Bar (Floating) -->
+  <div id="comparisonBar" class="comparison-bar" style="display: none;">
+    <div class="container">
+      <div class="comparison-bar-content">
+        <div class="comparison-bar-header">
+          <span class="comparison-count">0 halls selected</span>
+          <button onclick="clearComparison()" class="btn btn-secondary btn-sm">Clear All</button>
+        </div>
+        <div id="comparisonHalls" class="comparison-halls-list"></div>
+        <button onclick="openComparison()" class="btn btn-primary comparison-view-btn" disabled>
+          Compare (0)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    // Load halls on page load
+    async function loadHalls() {
+      const urlParams = new URLSearchParams(window.location.search);
+
+      // Set filters from URL
+      if (urlParams.has('category')) {
+        document.getElementById('categoryFilter').value = urlParams.get('category');
+      }
+      if (urlParams.has('search')) {
+        document.getElementById('searchFilter').value = urlParams.get('search');
+      }
+
+      await applyFilters();
+    }
+
+
+
+    // Display halls
+    function displayHalls(halls) {
+      const container = document.getElementById('hallsGrid');
+      const resultsCount = document.getElementById('resultsCount');
+
+      resultsCount.textContent = `Found ${halls.length} hall(s)`;
+
+      if (halls.length === 0) {
+        container.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
+            <p style="font-size: 3rem; margin-bottom: 1rem;">🔍</p>
+            <h2>No halls found</h2>
+            <p style="color: #6b7280;">Try adjusting your filters</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = halls.map(hall => `
+        <div class="card">
+          <img src="${hall.images[0]}" alt="${hall.name}" class="card-img">
+          <div class="card-body">
+            <h3 class="card-title">${hall.name}</h3>
+            <p class="card-text">
+              <strong>📍 ${hall.location}</strong><br>
+              <strong>👥 Capacity:</strong> ${hall.capacity} people<br>
+              <strong>💰 Price:</strong> ${formatCurrency(hall.price)}<br>
+              <br>
+              ${hall.distance ? `<strong>📏 Distance:</strong> ${hall.distance.toFixed(1)} km<br>` : ''}
+              ${hall.description.substring(0, 80)}...
+            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <span class="badge badge-info">${hall.category}</span>
+              <span style="color: #f59e0b;">⭐ ${hall.rating} (${hall.reviews})</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <a href="/hall.html?id=${hall._id}" class="btn btn-primary" style="flex: 1;">View Details</a>
+              <button onclick="toggleCompare('${hall._id}')" class="btn btn-secondary compare-btn" data-hall-id="${hall._id}" style="min-width: auto; padding: 0.65rem 1rem;">
+                <span class="compare-icon">⚖️</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Clear filters
+    function clearFilters() {
+      document.getElementById('categoryFilter').value = 'all';
+      document.getElementById('minPrice').value = '';
+      document.getElementById('maxPrice').value = '';
+      document.getElementById('locationFilter').value = '';
+      document.getElementById('guestFilter').value = '';
+      document.getElementById('searchFilter').value = '';
+      document.getElementById('dateFilter').value = '';
+      applyFilters();
+    }
+
+    // Get nearby halls (using geolocation)
+    async function getNearbyHalls() {
+      try {
+        const location = await getUserLocation();
+        showAlert('Location detected! Showing nearby halls', 'success');
+
+        applyFilters(location.latitude, location.longitude);
+      } catch (error) {
+        console.error(error);
+        showAlert('Could not detect location. Please enter location manually.', 'error');
+      }
+    }
+
+    // Initialize
+    loadHalls();
+    updateComparisonBar();
+
+    // Override default applyFilters to accept optional lat/lng
+    async function applyFilters(lat = null, lng = null) {
+      const filters = {
+        category: document.getElementById('categoryFilter').value,
+        minPrice: document.getElementById('minPrice').value,
+        maxPrice: document.getElementById('maxPrice').value,
+        location: document.getElementById('locationFilter').value,
+        guestCount: document.getElementById('guestFilter').value,
+        search: document.getElementById('searchFilter').value,
+        date: document.getElementById('dateFilter').value
+      };
+
+      if (lat && lng) {
+        filters.lat = lat;
+        filters.lng = lng;
+      }
+
+      // Remove empty filters
+      Object.keys(filters).forEach(key => {
+        if (!filters[key] || filters[key] === 'all') {
+          delete filters[key];
+        }
+      });
+
+      let halls = await getHalls(filters);
+
+      // Extra safety: also apply guest filter on the client side in case old data has string capacities
+      const guestValue = document.getElementById('guestFilter').value;
+      const requiredGuests = parseInt(guestValue);
+      if (guestValue && !isNaN(requiredGuests)) {
+        halls = halls.filter(h => parseInt(h.capacity || 0) >= requiredGuests);
+      }
+
+      displayHalls(halls);
+      updateCompareButtons();
+    }
+  </script>
+</body>
+
+</html>

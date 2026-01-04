@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Owner Dashboard - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- Chart.js Library -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+  <div class="dashboard-layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        🏛️ Venue Owner
+      </div>
+      <a href="#" class="nav-item active" onclick="loadView('overview')">📊 Overview</a>
+      <a href="#" class="nav-item" onclick="loadView('venues')">📍 My Venues</a>
+      <a href="#" class="nav-item" onclick="loadView('calendar')">📆 Calendar</a>
+      <a href="#" class="nav-item" onclick="loadView('bookings')">📅 Bookings</a>
+      <a href="#" class="nav-item" onclick="loadView('modifications')">✏️ Modification Requests</a>
+      <a href="#" class="nav-item" onclick="loadView('waitlist')">📋 Waitlist</a>
+
+      <div style="margin-top: auto; padding-top: 2rem;">
+        <a href="/" class="nav-item">← Back to Site</a>
+        <a href="#" class="nav-item" onclick="logout()">🚪 Logout</a>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="ownerContent">
+      <div class="loading">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Hall Modal (Hidden by default) -->
+  <div id="addHallModal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:2000;">
+    <div class="card" style="width:600px; max-height:90vh; overflow-y:auto; padding:2rem; background:white;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+        <h2 style="margin:0;">List New Venue</h2>
+        <button onclick="document.getElementById('addHallModal').style.display='none'"
+          style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+      </div>
+      <form id="addHallForm" onsubmit="submitNewHall(event)">
+        <div class="form-group"><label>Venue Name</label><input type="text" id="hallName" required></div>
+        <div class="form-group"><label>Category</label>
+          <select id="hallCategory">
+            <option>Party Hall</option>
+            <option>Wedding Hall</option>
+            <option>Reception Hall</option>
+            <option>Birthday Hall</option>
+            <option>Conference Hall</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Location (City/Area)</label>
+          <div style="display:flex; gap:0.5rem;">
+            <input type="text" id="hallLocation" required style="flex:1;">
+            <button type="button" class="btn btn-secondary" onclick="detectLoc()">📍 GPS</button>
+          </div>
+          <input type="hidden" id="hallLat"><input type="hidden" id="hallLng">
+        </div>
+        <div class="form-group"><label>Price (per event)</label><input type="number" id="hallPrice" required></div>
+        <div class="form-group"><label>Capacity (Guests)</label><input type="number" id="hallCapacity" required></div>
+        <div class="form-group"><label>Description</label><textarea id="hallDescription" rows="3" required></textarea>
+        </div>
+        <div class="form-group"><label>Amenities</label><input type="text" id="hallAmenities"
+            placeholder="AC, Parking, WiFi (comma separated)"></div>
+
+        <!-- Optional Services / Package Builder pricing (owners manage add-on pricing here) -->
+        <div class="form-group">
+          <label>Optional Services & Pricing</label>
+          <p class="text-muted" style="font-size:0.85rem; margin-bottom:0.5rem;">Configure prices for add-on services. Catering is per guest; others are per event.</p>
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+              <span>Catering (per guest)</span>
+              <input type="number" id="addonCatering" placeholder="0" style="width:120px;">
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+              <span>Decoration (per event)</span>
+              <input type="number" id="addonDecoration" placeholder="0" style="width:120px;">
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+              <span>DJ (per event)</span>
+              <input type="number" id="addonDJ" placeholder="0" style="width:120px;">
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+              <span>Photography (per event)</span>
+              <input type="number" id="addonPhotography" placeholder="0" style="width:120px;">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group"><label>Images (Select up to 5)</label><input type="file" id="hallImages" multiple
+            required accept="image/*"></div>
+
+        <div style="margin-top:2rem;">
+          <button type="submit" class="btn btn-primary w-full" id="submitHallBtn">Submit Listing</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let halls = [];
+    let bookings = [];
+    let user = null;
+    let analytics = null;
+
+    async function initOwner() {
+      user = await getCurrentUser();
+      if (!user || user.role !== 'owner') { window.location.href = '/login.html'; return; }
+
+      const token = sessionStorage.getItem('token');
+      try {
+        const [h, b, a] = await Promise.all([
+          fetch(`${API_URL}/owner/halls`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/bookings`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API_URL}/owner/analytics`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+
+        halls = (await h.json()).halls || [];
+        bookings = (await b.json()).bookings || [];
+        const analyticsData = await a.json();
+        analytics = analyticsData.success ? analyticsData.analytics : null;
+
+        loadView('overview');
+      } catch (e) {
+        console.error(e);
+        showAlert('Failed to load dashboard data', 'error');
+      }
+    }
+
+    function loadView(view) {
+      // Update Sidebar Active State
+      document.querySelectorAll('.nav-item').forEach(el =>
+        el.classList.toggle('active', el.textContent.toLowerCase().includes(view))
+      );
+
+      const content = document.getElementById('ownerContent');
+
+      if (view === 'overview') {
+        const uniqueCustomers = new Set(bookings.map(b => b.userId)).size;
+        const totalRev = bookings.reduce((s, b) => s + b.amount, 0);
+        const avgBookingValue = analytics ? analytics.averageBookingValue : (bookings.length > 0 ? totalRev / bookings.length : 0);
+        const perfMetrics = analytics ? analytics.performanceMetrics : null;
+
+        content.innerHTML = `
+           <h1 style="margin-bottom:2rem;">Dashboard Overview</h1>
+           
+           <!-- Performance Metrics Cards -->
+           <div class="stats-grid">
+              <div class="stat-card">
+                 <div class="stat-value">${halls.length}</div>
+                 <div class="stat-label">Active Venues</div>
+              </div>
+              <div class="stat-card">
+                 <div class="stat-value">${bookings.length}</div>
+                 <div class="stat-label">Total Bookings</div>
+              </div>
+              <div class="stat-card">
+                 <div class="stat-value">${formatCurrency(totalRev)}</div>
+                 <div class="stat-label">Total Revenue</div>
+              </div>
+              <div class="stat-card">
+                 <div class="stat-value">${uniqueCustomers}</div>
+                 <div class="stat-label">Unique Customers</div>
+              </div>
+              <div class="stat-card">
+                 <div class="stat-value">${formatCurrency(avgBookingValue)}</div>
+                 <div class="stat-label">Avg Booking Value</div>
+              </div>
+              ${perfMetrics ? `
+              <div class="stat-card">
+                 <div class="stat-value" style="color: ${perfMetrics.changes.revenueChange >= 0 ? '#10b981' : '#ef4444'};">
+                   ${perfMetrics.changes.revenueChange >= 0 ? '↑' : '↓'} ${Math.abs(perfMetrics.changes.revenueChange).toFixed(1)}%
+                 </div>
+                 <div class="stat-label">Revenue Change (MoM)</div>
+              </div>
+              <div class="stat-card">
+                 <div class="stat-value" style="color: ${perfMetrics.changes.bookingsChange >= 0 ? '#10b981' : '#ef4444'};">
+                   ${perfMetrics.changes.bookingsChange >= 0 ? '↑' : '↓'} ${Math.abs(perfMetrics.changes.bookingsChange).toFixed(1)}%
+                 </div>
+                 <div class="stat-label">Bookings Change (MoM)</div>
+              </div>
+              ` : ''}
+           </div>
+
+           <!-- Charts Section -->
+           <div class="grid grid-2" style="margin-top:2rem;">
+              <!-- Monthly Revenue Chart -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Monthly Revenue (Last 6 Months)</h2>
+                 <div id="revenueChart" style="width:100%; height:300px;"></div>
+              </div>
+
+              <!-- Booking Trends Chart -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Booking Trends (Last 12 Months)</h2>
+                 <div id="bookingTrendsChart" style="width:100%; height:300px;"></div>
+              </div>
+           </div>
+
+           <!-- Occupancy Heatmap and Popular Dates -->
+           <div class="grid grid-2" style="margin-top:2rem;">
+              <!-- Occupancy Rate Calendar Heatmap -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Occupancy Rate (Last 90 Days)</h2>
+                 <div id="occupancyHeatmap" style="width:100%; min-height:300px;"></div>
+              </div>
+
+              <!-- Popular Dates -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Most Popular Dates</h2>
+                 <div id="popularDatesChart" style="width:100%; height:300px;"></div>
+              </div>
+           </div>
+
+           <!-- Customer Demographics and Event Types -->
+           <div class="grid grid-2" style="margin-top:2rem;">
+              <!-- Customer Demographics -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Customer Demographics</h2>
+                 <div id="customerDemographicsChart" style="width:100%; height:300px;"></div>
+              </div>
+
+              <!-- Event Type Distribution -->
+              <div class="card">
+                 <h2 style="font-size:1.2rem; margin-bottom:1rem;">Event Type Distribution</h2>
+                 <div id="eventTypeChart" style="width:100%; height:300px;"></div>
+              </div>
+           </div>
+
+           <!-- Recent Bookings -->
+           <div class="card" style="margin-top:2rem;">
+              <h2 style="font-size:1.2rem; margin-bottom:1rem;">Recent Bookings</h2>
+              ${bookings.length === 0 ? '<p class="text-muted">No bookings yet.</p>' : `
+                <div style="display:flex; flex-direction:column;">
+                   ${bookings.slice(0, 5).map((b, index) => `
+                      <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        padding:1rem 0;
+                        ${index < bookings.slice(0, 5).length - 1 ? 'border-bottom:1px solid var(--border);' : ''}
+                        gap:1rem;
+                      ">
+                         <div style="flex:1; min-width:0;">
+                            <div style="font-weight:600; font-size:1rem; margin-bottom:0.25rem; color:#111827;">${b.user ? b.user.name : 'Guest'}</div>
+                            <div style="font-size:0.9rem; color:#64748b;">${b.hall.name} • ${b.isMultiDay && b.startDate && b.endDate 
+                              ? `${formatDate(b.startDate)} - ${formatDate(b.endDate)}`
+                              : formatDate(b.date || b.startDate)}</div>
+                         </div>
+                         <div style="
+                           font-size:1.1rem;
+                           font-weight:600;
+                           color:#111827;
+                           text-align:right;
+                           white-space:nowrap;
+                           flex-shrink:0;
+                         ">${formatCurrency(b.amount)}</div>
+                      </div>
+                   `).join('')}
+                </div>
+                ${bookings.length > 5 ? `<button class="btn btn-secondary w-full" style="margin-top:1rem;" onclick="loadView('bookings')">View All</button>` : ''}
+              `}
+           </div>
+
+           <!-- Quick Actions -->
+           <div class="card" style="margin-top:2rem; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:2rem;">
+              <div style="font-size:2.5rem; margin-bottom:1rem;">Add New Venue</div>
+              <p class="text-muted" style="margin-bottom:1.5rem;">Expand your business by listing another hall.</p>
+              <button class="btn btn-primary" onclick="showAddHallModal()">+ List Venue</button>
+           </div>
+        `;
+
+        // Render charts after DOM is ready
+        setTimeout(() => {
+          if (analytics) {
+            renderCharts(analytics);
+          }
+        }, 100);
+      }
+      else if (view === 'venues') {
+        content.innerHTML = `
+           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
+              <h1>My Venues</h1>
+              <button class="btn btn-primary" onclick="showAddHallModal()">+ Add New</button>
+           </div>
+           
+           <div class="grid grid-3">
+              ${halls.map(h => `
+                 <div class="card" style="padding:0; overflow:hidden;">
+                    <img src="${h.images[0]}" style="width:100%; height:150px; object-fit:cover;">
+                    <div style="padding:1.5rem;">
+                       <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:0.5rem;">
+                          <h3 style="font-size:1.1rem; margin:0;">${h.name}</h3>
+                          <span class="badge badge-${h.status === 'approved' ? 'success' : 'warning'}">${h.status}</span>
+                       </div>
+                       <p style="color:#64748b; font-size:0.9rem; margin-bottom:1rem;">${h.location} • ${formatCurrency(h.price)}</p>
+                       <div style="display:flex; gap:0.5rem;">
+                          <button class="btn btn-secondary w-full" onclick="editHall('${h._id}')">Edit</button>
+                          <a href="/hall.html?id=${h._id}" class="btn btn-secondary w-full">View</a>
+                       </div>
+                    </div>
+                 </div>
+              `).join('')}
+           </div>
+           ${halls.length === 0 ? '<p class="text-muted">No venues listed yet.</p>' : ''}
+        `;
+      }
+      else if (view === 'calendar') {
+        if (halls.length === 0) {
+          content.innerHTML = `
+            <h1 style="margin-bottom:2rem;">Calendar Management</h1>
+            <div class="card" style="text-align:center; padding:3rem;">
+              <p class="text-muted" style="margin-bottom:1.5rem;">You need to have at least one venue to manage calendar availability.</p>
+              <button class="btn btn-primary" onclick="showAddHallModal()">+ List Your First Venue</button>
+            </div>
+          `;
+        } else {
+          content.innerHTML = `
+            <h1 style="margin-bottom:2rem;">Calendar Management</h1>
+            <div class="card" style="margin-bottom:2rem;">
+              <div class="form-group" style="margin-bottom:1rem;">
+                <label style="display:block; margin-bottom:0.5rem; font-weight:600;">Select Venue</label>
+                <select id="calendarHallSelect" class="form-control" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px; font-size:1rem;" onchange="loadCalendarForHall()">
+                  <option value="">-- Select a venue --</option>
+                  ${halls.map(h => `<option value="${h._id}">${h.name} (${h.location})</option>`).join('')}
+                </select>
+              </div>
+              <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.5rem;">
+                Select a venue to manage its availability calendar. <strong>Click</strong> on dates to select them for bulk operations, or <strong>Ctrl/Cmd+Click</strong> to toggle a single date immediately.
+              </p>
+            </div>
+            <div id="calendarContainer"></div>
+          `;
+        }
+      }
+      else if (view === 'bookings') {
+        content.innerHTML = `
+           <h1 style="margin-bottom:2rem;">All Bookings</h1>
+           <div class="card" style="overflow:visible;">
+             <div style="overflow-x:auto;">
+               <table style="width:100%; border-collapse:collapse; text-align:left;">
+                  <thead style="background:#f1f5f9; border-bottom:1px solid #e2e8f0;">
+                     <tr>
+                        <th style="padding:1rem;">ID</th>
+                        <th style="padding:1rem;">Guest</th>
+                        <th style="padding:1rem;">Venue</th>
+                        <th style="padding:1rem;">Date</th>
+                        <th style="padding:1rem;">Amount</th>
+                        <th style="padding:1rem;">Status</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+                    ${bookings.map(b => `
+                       <tr style="border-bottom:1px solid #e2e8f0;">
+                          <td style="padding:1rem;">#${b._id || ''}</td>
+                          <td style="padding:1rem; font-weight:500;">${b.user ? b.user.name : 'Guest'}</td>
+                          <td style="padding:1rem;">${b.hall.name}</td>
+                          <td style="padding:1rem;">${b.isMultiDay && b.startDate && b.endDate 
+                            ? `${formatDate(b.startDate)} - ${formatDate(b.endDate)}`
+                            : formatDate(b.date || b.startDate)}</td>
+                          <td style="padding:1rem;">${formatCurrency(b.amount)}</td>
+                          <td style="padding:1rem;"><span class="badge badge-${b.status === 'confirmed' ? 'success' : 'warning'}">${b.status}</span></td>
+                       </tr>
+                    `).join('')}
+                  </tbody>
+               </table>
+               ${bookings.length === 0 ? '<p style="padding:2rem; text-align:center;" class="text-muted">No bookings found.</p>' : ''}
+             </div>
+           </div>
+        `;
+      }
+      else if (view === 'modifications') {
+        loadModificationRequests();
+      }
+      else if (view === 'waitlist') {
+        loadOwnerWaitlist();
+      }
+    }
+
+    let editingHallId = null;
+
+    function editHall(id) {
+      const hall = halls.find(h => h._id === id);
+      if (!hall) return;
+
+      editingHallId = hall._id;
+      document.getElementById('addHallModal').style.display = 'flex';
+      document.querySelector('#addHallModal h2').textContent = 'Edit Venue';
+      document.getElementById('submitHallBtn').textContent = 'Update Venue';
+
+      // Populate form
+      document.getElementById('hallName').value = hall.name;
+      document.getElementById('hallCategory').value = hall.category;
+      document.getElementById('hallLocation').value = hall.location;
+      document.getElementById('hallLat').value = hall.lat || '';
+      document.getElementById('hallLng').value = hall.lng || '';
+      document.getElementById('hallPrice').value = hall.price;
+      document.getElementById('hallCapacity').value = hall.capacity;
+      document.getElementById('hallDescription').value = hall.description;
+      document.getElementById('hallAmenities').value = Array.isArray(hall.amenities) ? hall.amenities.join(', ') : hall.amenities;
+
+      // Populate add-on pricing if exists
+      const addons = Array.isArray(hall.addons) ? hall.addons : [];
+      const byKey = {};
+      addons.forEach(a => { if (a && a.key) byKey[a.key] = a; });
+      document.getElementById('addonCatering').value = byKey['catering'] ? byKey['catering'].price || 0 : '';
+      document.getElementById('addonDecoration').value = byKey['decoration'] ? byKey['decoration'].price || 0 : '';
+      document.getElementById('addonDJ').value = byKey['dj'] ? byKey['dj'].price || 0 : '';
+      document.getElementById('addonPhotography').value = byKey['photography'] ? byKey['photography'].price || 0 : '';
+    }
+
+    function showAddHallModal() {
+      editingHallId = null;
+      document.getElementById('addHallForm').reset();
+      document.querySelector('#addHallModal h2').textContent = 'List New Venue';
+      document.getElementById('submitHallBtn').textContent = 'Submit Listing';
+      document.getElementById('addHallModal').style.display = 'flex';
+    }
+
+    async function detectLoc() {
+      const btn = document.querySelector('button[onclick="detectLoc()"]');
+      const originalText = btn.textContent;
+      btn.textContent = '📍 Locating...';
+      btn.disabled = true;
+
+      try {
+        const loc = await getUserLocation();
+        const lat = loc.latitude;
+        const lng = loc.longitude;
+
+        document.getElementById('hallLat').value = lat;
+        document.getElementById('hallLng').value = lng;
+
+        // Reverse Geocoding (using OpenStreetMap Nominatim)
+        btn.textContent = '📍 Fetching Address...';
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+        const data = await response.json();
+
+        if (data && data.address) {
+          const city = data.address.city || data.address.town || data.address.village || '';
+          const district = data.address.state_district || data.address.county || '';
+          const state = data.address.state || '';
+
+          // Construct readable location string
+          const locationParts = [city, district, state].filter(p => p);
+          const formattedLocation = locationParts.join(', ');
+
+          document.getElementById('hallLocation').value = formattedLocation;
+          // Also set the hidden/placeholder address field just in case
+          // fd.append('address', ...) currently uses placeholder in submitNewHall
+        } else {
+          document.getElementById('hallLocation').value = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        }
+      } catch (e) {
+        console.error(e);
+        alert("GPS failed: " + e.message);
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    async function submitNewHall(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitHallBtn');
+      btn.disabled = true; btn.textContent = 'Processing...';
+
+      const token = sessionStorage.getItem('token');
+      const fd = new FormData();
+      fd.append('name', document.getElementById('hallName').value);
+      fd.append('category', document.getElementById('hallCategory').value);
+      fd.append('location', document.getElementById('hallLocation').value);
+      fd.append('lat', document.getElementById('hallLat').value);
+      fd.append('lng', document.getElementById('hallLng').value);
+      fd.append('price', document.getElementById('hallPrice').value);
+      fd.append('capacity', document.getElementById('hallCapacity').value);
+      fd.append('address', "Address Placeholder");
+      fd.append('description', document.getElementById('hallDescription').value);
+
+      document.getElementById('hallAmenities').value.split(',').forEach(a => fd.append('amenities', a.trim()));
+
+      // Prepare add-ons payload from pricing inputs
+      const addons = [];
+      const cateringPrice = parseInt(document.getElementById('addonCatering').value || '0');
+      const decorationPrice = parseInt(document.getElementById('addonDecoration').value || '0');
+      const djPrice = parseInt(document.getElementById('addonDJ').value || '0');
+      const photoPrice = parseInt(document.getElementById('addonPhotography').value || '0');
+
+      if (cateringPrice > 0) {
+        addons.push({ key: 'catering', name: 'Catering', price: cateringPrice, type: 'per_guest' });
+      }
+      if (decorationPrice > 0) {
+        addons.push({ key: 'decoration', name: 'Decoration', price: decorationPrice, type: 'flat' });
+      }
+      if (djPrice > 0) {
+        addons.push({ key: 'dj', name: 'DJ', price: djPrice, type: 'flat' });
+      }
+      if (photoPrice > 0) {
+        addons.push({ key: 'photography', name: 'Photography', price: photoPrice, type: 'flat' });
+      }
+
+      fd.append('addons', JSON.stringify(addons));
+      const files = document.getElementById('hallImages').files;
+      for (let i = 0; i < files.length; i++) fd.append('images', files[i]);
+
+      try {
+        let url = `${API_URL}/halls`;
+        let method = 'POST';
+
+        if (editingHallId) {
+          url = `${API_URL}/halls/${editingHallId}`;
+          method = 'PUT';
+        }
+
+        const res = await fetch(url, { method: method, headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+
+        if (res.ok) {
+          document.getElementById('addHallModal').style.display = 'none';
+          document.getElementById('addHallForm').reset();
+          btn.disabled = false; btn.textContent = 'Submit Listing';
+          initOwner(); // Reload data
+          showAlert(editingHallId ? 'Venue updated successfully!' : 'Venue listed successfully!', 'success');
+        } else {
+          const errData = await res.json();
+          throw new Error(errData.message || 'Failed to save venue');
+        }
+      } catch (err) {
+        console.error(err);
+        showAlert(err.message, 'error');
+        btn.disabled = false; btn.textContent = editingHallId ? 'Update Venue' : 'Submit Listing';
+      }
+    }
+
+    // Calendar Management Functions
+    let selectedDates = new Set();
+    let currentCalendarHallId = null;
+
+    async function loadCalendarForHall() {
+      const select = document.getElementById('calendarHallSelect');
+      if (!select || !select.value) {
+        document.getElementById('calendarContainer').innerHTML = '';
+        selectedDates.clear();
+        currentCalendarHallId = null;
+        return;
+      }
+
+      currentCalendarHallId = select.value;
+      selectedDates.clear();
+      await buildOwnerCalendar(currentCalendarHallId);
+    }
+
+    async function buildOwnerCalendar(hallId) {
+      const container = document.getElementById('calendarContainer');
+      if (!container) return;
+
+      const hall = halls.find(h => h._id === hallId);
+      if (!hall) {
+        container.innerHTML = '<p class="text-muted">Venue not found.</p>';
+        return;
+      }
+
+      const today = new Date();
+      let currentMonth = today.getMonth();
+      let currentYear = today.getFullYear();
+
+      async function renderCalendar() {
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const from = firstDay.toISOString().split('T')[0];
+        const to = lastDay.toISOString().split('T')[0];
+
+        const availability = await getHallAvailability(hallId, from, to);
+        const statusByDate = {};
+        availability.forEach(a => {
+          statusByDate[a.date] = a.status;
+        });
+
+        const monthLabel = firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+        let html = `
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+              <h2 style="margin:0; font-size:1.5rem;">${hall.name}</h2>
+              <div style="display:flex; gap:0.5rem;">
+                <button type="button" class="btn btn-secondary" id="calPrevBtn" style="padding:0.5rem 1rem;">← Prev</button>
+                <span style="font-weight:600; padding:0.5rem 1rem; display:flex; align-items:center;">${monthLabel}</span>
+                <button type="button" class="btn btn-secondary" id="calNextBtn" style="padding:0.5rem 1rem;">Next →</button>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:0.8rem;margin-bottom:4px;color:var(--text-muted); padding:0.5rem 0;">
+              <div style="text-align:center;">Sun</div><div style="text-align:center;">Mon</div><div style="text-align:center;">Tue</div><div style="text-align:center;">Wed</div><div style="text-align:center;">Thu</div><div style="text-align:center;">Fri</div><div style="text-align:center;">Sat</div>
+            </div>
+        `;
+
+        const startWeekDay = firstDay.getDay();
+        html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+
+        for (let i = 0; i < startWeekDay; i++) {
+          html += `<div></div>`;
+        }
+
+        const todayMid = new Date();
+        todayMid.setHours(0, 0, 0, 0);
+
+        for (let d = 1; d <= lastDay.getDate(); d++) {
+          const dateObj = new Date(currentYear, currentMonth, d);
+          const ds = dateObj.toISOString().split('T')[0];
+          const status = statusByDate[ds] || 'available';
+          const isPast = dateObj < todayMid;
+          const isSelected = selectedDates.has(ds);
+
+          let bg = '#e5e7eb';
+          let color = '#111827';
+          let cursor = 'pointer';
+          let title = 'Available - Click to select';
+          let border = '2px solid transparent';
+
+          if (isSelected) {
+            border = '2px solid #6366f1';
+            bg = '#e0e7ff';
+          }
+
+          if (status === 'booked') {
+            bg = '#f97373';
+            color = 'white';
+            cursor = 'not-allowed';
+            title = 'Booked - Cannot be changed';
+            border = '2px solid transparent';
+          } else if (status === 'blocked') {
+            bg = '#facc15';
+            color = '#111827';
+            cursor = 'pointer';
+            title = 'Blocked - Click to select or toggle';
+            if (isSelected) {
+              border = '2px solid #6366f1';
+              bg = '#fde68a';
+            }
+          }
+
+          if (isPast && status === 'available') {
+            bg = '#f3f4f6';
+            color = '#9ca3af';
+            cursor = 'not-allowed';
+            title = 'Past date';
+            border = '2px solid transparent';
+          }
+
+          html += `
+            <button 
+              type="button"
+              class="calendar-day"
+              data-date="${ds}"
+              data-status="${status}"
+              data-past="${isPast}"
+              title="${title}"
+              style="
+                border:${border};
+                border-radius:6px;
+                padding:8px 0;
+                font-size:0.85rem;
+                background:${bg};
+                color:${color};
+                cursor:${cursor};
+                transition:all 0.2s;
+              "
+              ${status === 'booked' || (isPast && status === 'available') ? 'disabled' : ''}
+            >
+              ${d}
+            </button>
+          `;
+        }
+
+        html += `</div>`;
+
+        // Legend and Bulk Actions
+        html += `
+          <div style="display:flex; gap:1rem; margin-top:1.5rem; font-size:0.85rem; color:var(--text-muted); flex-wrap:wrap; padding:1rem 0; border-top:1px solid var(--border);">
+            <span><span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;border-radius:3px;margin-right:4px;"></span> Available</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:#f97373;border-radius:3px;margin-right:4px;"></span> Booked</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:#facc15;border-radius:3px;margin-right:4px;"></span> Blocked</span>
+            <span><span style="display:inline-block;width:12px;height:12px;background:#e0e7ff;border:2px solid #6366f1;border-radius:3px;margin-right:4px;"></span> Selected</span>
+          </div>
+
+          <div id="bulkActionsContainer" style="margin-top:1.5rem; padding:1.5rem; background:#f8fafc; border-radius:8px; border:1px solid var(--border); display:none;">
+            <div style="margin-bottom:1rem;">
+              <strong id="selectedCount">0</strong> date(s) selected
+            </div>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="bulkBlockDates()" id="bulkBlockBtn">Block Selected Dates</button>
+              <button class="btn btn-secondary" onclick="bulkUnblockDates()" id="bulkUnblockBtn">Unblock Selected Dates</button>
+              <button class="btn btn-secondary" onclick="clearSelection()">Clear Selection</button>
+            </div>
+          </div>
+        `;
+
+        html += `</div>`;
+        container.innerHTML = html;
+
+        // Navigation handlers
+        document.getElementById('calPrevBtn').onclick = () => {
+          currentMonth -= 1;
+          if (currentMonth < 0) {
+            currentMonth = 11;
+            currentYear -= 1;
+          }
+          renderCalendar();
+        };
+
+        document.getElementById('calNextBtn').onclick = () => {
+          currentMonth += 1;
+          if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear += 1;
+          }
+          renderCalendar();
+        };
+
+        // Date selection handlers
+        container.querySelectorAll('.calendar-day').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const date = btn.getAttribute('data-date');
+            const status = btn.getAttribute('data-status');
+            const isPast = btn.getAttribute('data-past') === 'true';
+
+            // Don't allow selection of booked dates or past dates
+            if (status === 'booked' || (isPast && status === 'available')) {
+              return;
+            }
+
+            // Ctrl/Cmd+Click: Immediate toggle (single date)
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              const action = status === 'blocked' ? 'unblock' : 'block';
+              const result = await updateHallBlockedDates(currentCalendarHallId, [date], action);
+              if (result.success) {
+                showAlert(`Date ${action}ed successfully`, 'success');
+                await renderCalendar();
+              } else {
+                showAlert(result.message || 'Failed to update date', 'error');
+              }
+              return;
+            }
+
+            // Regular click: Toggle selection for bulk operations
+            if (selectedDates.has(date)) {
+              selectedDates.delete(date);
+            } else {
+              selectedDates.add(date);
+            }
+
+            // Update UI
+            updateBulkActionsUI();
+            renderCalendar();
+          });
+        });
+
+        // Update bulk actions UI after rendering
+        updateBulkActionsUI();
+      }
+
+      await renderCalendar();
+    }
+
+    function updateBulkActionsUI() {
+      const container = document.getElementById('bulkActionsContainer');
+      const countEl = document.getElementById('selectedCount');
+      const blockBtn = document.getElementById('bulkBlockBtn');
+      const unblockBtn = document.getElementById('bulkUnblockBtn');
+
+      if (!container || !countEl) return;
+
+      const count = selectedDates.size;
+      if (count > 0) {
+        container.style.display = 'block';
+        countEl.textContent = count;
+      } else {
+        container.style.display = 'none';
+      }
+    }
+
+    function clearSelection() {
+      selectedDates.clear();
+      updateBulkActionsUI();
+      if (currentCalendarHallId) {
+        buildOwnerCalendar(currentCalendarHallId);
+      }
+    }
+
+    async function bulkBlockDates() {
+      if (selectedDates.size === 0) {
+        showAlert('Please select at least one date', 'error');
+        return;
+      }
+
+      if (!currentCalendarHallId) {
+        showAlert('Please select a venue first', 'error');
+        return;
+      }
+
+      const dates = Array.from(selectedDates);
+      
+      // Filter out booked dates
+      const hall = halls.find(h => h._id === currentCalendarHallId);
+      if (!hall) {
+        showAlert('Venue not found', 'error');
+        return;
+      }
+
+      // Check for booked dates
+      const availability = await getHallAvailability(currentCalendarHallId, dates[0], dates[dates.length - 1]);
+      const bookedDates = availability.filter(a => a.status === 'booked').map(a => a.date);
+      const datesToBlock = dates.filter(d => !bookedDates.includes(d));
+
+      if (datesToBlock.length === 0) {
+        showAlert('Selected dates include booked dates that cannot be blocked', 'error');
+        return;
+      }
+
+      if (datesToBlock.length < dates.length) {
+        showAlert(`${dates.length - datesToBlock.length} date(s) are booked and will be skipped`, 'info');
+      }
+
+      const result = await updateHallBlockedDates(currentCalendarHallId, datesToBlock, 'block');
+      if (result.success) {
+        showAlert(`Successfully blocked ${datesToBlock.length} date(s)`, 'success');
+        selectedDates.clear();
+        await buildOwnerCalendar(currentCalendarHallId);
+      } else {
+        showAlert(result.message || 'Failed to block dates', 'error');
+      }
+    }
+
+    async function bulkUnblockDates() {
+      if (selectedDates.size === 0) {
+        showAlert('Please select at least one date', 'error');
+        return;
+      }
+
+      if (!currentCalendarHallId) {
+        showAlert('Please select a venue first', 'error');
+        return;
+      }
+
+      const dates = Array.from(selectedDates);
+      const result = await updateHallBlockedDates(currentCalendarHallId, dates, 'unblock');
+      if (result.success) {
+        showAlert(`Successfully unblocked ${dates.length} date(s)`, 'success');
+        selectedDates.clear();
+        await buildOwnerCalendar(currentCalendarHallId);
+      } else {
+        showAlert(result.message || 'Failed to unblock dates', 'error');
+      }
+    }
+
+    // Chart instances storage
+    let chartInstances = {};
+
+    // Chart Rendering Functions
+    function renderCharts(analytics) {
+      renderRevenueChart(analytics.monthlyRevenue);
+      renderBookingTrendsChart(analytics.bookingTrends);
+      renderOccupancyHeatmap(analytics.occupancyRate);
+      renderPopularDatesChart(analytics.popularDates);
+      renderCustomerDemographicsChart(analytics.customerDemographics);
+      renderEventTypeChart(analytics.customerDemographics.byEventType);
+    }
+
+    function renderRevenueChart(data) {
+      const container = document.getElementById('revenueChart');
+      if (!container || !data || data.length === 0) {
+        container.innerHTML = '<p class="text-muted">No revenue data available</p>';
+        return;
+      }
+
+      // Destroy existing chart if any
+      if (chartInstances.revenueChart) {
+        chartInstances.revenueChart.destroy();
+      }
+
+      const ctx = document.createElement('canvas');
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      chartInstances.revenueChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(item => item.month),
+          datasets: [{
+            label: 'Revenue',
+            data: data.map(item => item.revenue),
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+            tension: 0.4,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return 'Revenue: ' + formatCurrency(context.parsed.y);
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(value) {
+                  return formatCurrency(value);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderBookingTrendsChart(data) {
+      const container = document.getElementById('bookingTrendsChart');
+      if (!container || !data || data.length === 0) {
+        container.innerHTML = '<p class="text-muted">No booking trends data available</p>';
+        return;
+      }
+
+      // Destroy existing chart if any
+      if (chartInstances.bookingTrendsChart) {
+        chartInstances.bookingTrendsChart.destroy();
+      }
+
+      const ctx = document.createElement('canvas');
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      chartInstances.bookingTrendsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.map(item => item.month),
+          datasets: [{
+            label: 'Bookings',
+            data: data.map(item => item.count),
+            backgroundColor: '#0891b2',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderOccupancyHeatmap(occupancyData) {
+      const container = document.getElementById('occupancyHeatmap');
+      if (!container) return;
+
+      if (!occupancyData || Object.keys(occupancyData).length === 0) {
+        container.innerHTML = '<p class="text-muted">No occupancy data available</p>';
+        return;
+      }
+
+      // Create calendar heatmap for last 90 days
+      const today = new Date();
+      const days = [];
+      for (let i = 89; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        days.push({
+          date: dateStr,
+          count: occupancyData[dateStr] || 0,
+          day: date.getDate(),
+          month: date.getMonth()
+        });
+      }
+
+      // Group by weeks
+      const weeks = [];
+      let currentWeek = [];
+      days.forEach((day, index) => {
+        const date = new Date(day.date);
+        const dayOfWeek = date.getDay();
+        
+        if (index === 0 && dayOfWeek !== 0) {
+          // Fill empty days at start
+          for (let i = 0; i < dayOfWeek; i++) {
+            currentWeek.push(null);
+          }
+        }
+        
+        currentWeek.push(day);
+        
+        if (dayOfWeek === 6 || index === days.length - 1) {
+          weeks.push([...currentWeek]);
+          currentWeek = [];
+        }
+      });
+
+      let html = `
+        <div style="display: flex; gap: 2px; flex-direction: column;">
+          <div style="display: flex; gap: 2px; font-size: 0.7rem; color: var(--text-muted);">
+            <div style="width: 20px;"></div>
+            <div style="flex: 1; text-align: center;">Sun</div>
+            <div style="flex: 1; text-align: center;">Mon</div>
+            <div style="flex: 1; text-align: center;">Tue</div>
+            <div style="flex: 1; text-align: center;">Wed</div>
+            <div style="flex: 1; text-align: center;">Thu</div>
+            <div style="flex: 1; text-align: center;">Fri</div>
+            <div style="flex: 1; text-align: center;">Sat</div>
+          </div>
+      `;
+
+      weeks.forEach(week => {
+        html += '<div style="display: flex; gap: 2px;">';
+        week.forEach((day, dayIndex) => {
+          if (day === null) {
+            html += '<div style="width: 20px; height: 20px;"></div>';
+          } else {
+            const intensity = Math.min(day.count / 3, 1); // Normalize to 0-1 (max 3 bookings per day)
+            const bgColor = intensity > 0 
+              ? `rgba(99, 102, 241, ${0.3 + intensity * 0.7})` 
+              : '#f3f4f6';
+            const color = intensity > 0.5 ? 'white' : '#111827';
+            
+            html += `
+              <div 
+                style="
+                  width: 20px; 
+                  height: 20px; 
+                  background: ${bgColor}; 
+                  color: ${color};
+                  border-radius: 3px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 0.7rem;
+                  cursor: pointer;
+                  position: relative;
+                "
+                title="${day.date}: ${day.count} booking(s)"
+              >
+                ${day.day}
+              </div>
+            `;
+          }
+        });
+        html += '</div>';
+      });
+
+      html += '</div>';
+      html += `
+        <div style="display: flex; gap: 1rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); align-items: center;">
+          <span>Less</span>
+          <div style="display: flex; gap: 2px;">
+            <div style="width: 20px; height: 20px; background: #f3f4f6; border-radius: 3px;"></div>
+            <div style="width: 20px; height: 20px; background: rgba(99, 102, 241, 0.5); border-radius: 3px;"></div>
+            <div style="width: 20px; height: 20px; background: rgba(99, 102, 241, 0.7); border-radius: 3px;"></div>
+            <div style="width: 20px; height: 20px; background: rgba(99, 102, 241, 1); border-radius: 3px;"></div>
+          </div>
+          <span>More</span>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function renderPopularDatesChart(data) {
+      const container = document.getElementById('popularDatesChart');
+      if (!container || !data || data.length === 0) {
+        container.innerHTML = '<p class="text-muted">No popular dates data available</p>';
+        return;
+      }
+
+      // Destroy existing chart if any
+      if (chartInstances.popularDatesChart) {
+        chartInstances.popularDatesChart.destroy();
+      }
+
+      const ctx = document.createElement('canvas');
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      const chartData = data.map(item => ({
+        date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        count: item.count
+      }));
+
+      chartInstances.popularDatesChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: chartData.map(item => item.date),
+          datasets: [{
+            label: 'Bookings',
+            data: chartData.map(item => item.count),
+            backgroundColor: '#f59e0b',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderCustomerDemographicsChart(data) {
+      const container = document.getElementById('customerDemographicsChart');
+      if (!container || !data) {
+        container.innerHTML = '<p class="text-muted">No demographics data available</p>';
+        return;
+      }
+
+      // Destroy existing chart if any
+      if (chartInstances.customerDemographicsChart) {
+        chartInstances.customerDemographicsChart.destroy();
+      }
+
+      const ctx = document.createElement('canvas');
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      chartInstances.customerDemographicsChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['New Customers', 'Repeat Customers'],
+          datasets: [{
+            data: [data.newCustomers || 0, data.repeatCustomers || 0],
+            backgroundColor: ['#6366f1', '#0891b2']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderEventTypeChart(eventTypeData) {
+      const container = document.getElementById('eventTypeChart');
+      if (!container || !eventTypeData || Object.keys(eventTypeData).length === 0) {
+        container.innerHTML = '<p class="text-muted">No event type data available</p>';
+        return;
+      }
+
+      // Destroy existing chart if any
+      if (chartInstances.eventTypeChart) {
+        chartInstances.eventTypeChart.destroy();
+      }
+
+      const ctx = document.createElement('canvas');
+      container.innerHTML = '';
+      container.appendChild(ctx);
+
+      const chartData = Object.entries(eventTypeData);
+      const COLORS = ['#6366f1', '#0891b2', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'];
+
+      chartInstances.eventTypeChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: chartData.map(([name]) => name),
+          datasets: [{
+            data: chartData.map(([, value]) => value),
+            backgroundColor: COLORS.slice(0, chartData.length)
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.parsed || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                  return `${label}: ${value} (${percentage}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadModificationRequests() {
+      const content = document.getElementById('ownerContent');
+      const token = sessionStorage.getItem('token');
+
+      try {
+        const response = await fetch(`${API_URL}/owner/modification-requests`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        const modifications = data.success ? data.modifications : [];
+
+        content.innerHTML = `
+          <h1 style="margin-bottom:2rem;">Modification Requests</h1>
+          ${modifications.length === 0 ? `
+            <div class="card" style="text-align:center; padding:3rem;">
+              <p class="text-muted">No pending modification requests.</p>
+            </div>
+          ` : `
+            <div style="display:flex; flex-direction:column; gap:1.5rem;">
+              ${modifications.map(mod => `
+                <div class="card">
+                  <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:1rem;">
+                    <div>
+                      <h3 style="margin:0 0 0.5rem 0;">${mod.type === 'date_change' ? 'Date Change Request' : 'Add-on Change Request'}</h3>
+                      <p style="color:var(--text-secondary); margin:0;">
+                        Booking: ${mod.booking ? mod.booking.hall.name : 'N/A'} • 
+                        Guest: ${mod.booking && mod.booking.user ? mod.booking.user.name : 'N/A'}
+                      </p>
+                    </div>
+                    <span class="badge badge-warning">Pending</span>
+                  </div>
+
+                  ${mod.type === 'date_change' ? `
+                    <div style="padding:1rem; background:var(--bg-muted); border-radius:8px; margin-bottom:1rem;">
+                      <div style="display:flex; align-items:center; gap:1rem;">
+                        <div>
+                          <div style="font-size:0.85rem; color:var(--text-secondary);">Current Date</div>
+                          <div style="font-weight:600;">${formatDate(mod.oldValue)}</div>
+                        </div>
+                        <div style="font-size:1.5rem;">→</div>
+                        <div>
+                          <div style="font-size:0.85rem; color:var(--text-secondary);">Requested Date</div>
+                          <div style="font-weight:600;">${formatDate(mod.newValue)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ` : `
+                    <div style="padding:1rem; background:var(--bg-muted); border-radius:8px; margin-bottom:1rem;">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                          <div style="font-size:0.85rem; color:var(--text-secondary);">Current Amount</div>
+                          <div style="font-weight:600;">${formatCurrency(mod.oldAmount || 0)}</div>
+                        </div>
+                        <div style="font-size:1.5rem;">→</div>
+                        <div>
+                          <div style="font-size:0.85rem; color:var(--text-secondary);">New Amount</div>
+                          <div style="font-weight:600; color:var(--primary);">${formatCurrency(mod.newAmount || 0)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  `}
+
+                  ${mod.reason ? `
+                    <div style="margin-bottom:1rem;">
+                      <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.25rem;">Reason</div>
+                      <div>${mod.reason}</div>
+                    </div>
+                  ` : ''}
+
+                  <div style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem;">
+                    Requested on ${new Date(mod.requestedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+
+                  <div style="display:flex; gap:0.5rem;">
+                    <button onclick="approveModification('${mod._id}', 'approve')" class="btn btn-success">
+                      ✓ Approve
+                    </button>
+                    <button onclick="approveModification('${mod._id}', 'reject')" class="btn btn-danger">
+                      ✗ Reject
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        `;
+      } catch (error) {
+        console.error('Error loading modification requests:', error);
+        content.innerHTML = '<p class="text-muted">Failed to load modification requests.</p>';
+      }
+    }
+
+    async function approveModification(modificationId, action) {
+      const token = sessionStorage.getItem('token');
+      
+      try {
+        const response = await fetch(`${API_URL}/bookings/modifications/${modificationId}/approve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ action })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          showAlert(`Modification request ${action}d successfully`, 'success');
+          loadModificationRequests();
+        } else {
+          showAlert(data.message || 'Failed to process request', 'error');
+        }
+      } catch (error) {
+        console.error('Error approving modification:', error);
+        showAlert('Failed to process request', 'error');
+      }
+    }
+
+    async function loadOwnerWaitlist() {
+      const content = document.getElementById('ownerContent');
+      const token = sessionStorage.getItem('token');
+
+      try {
+        const response = await fetch(`${API_URL}/owner/waitlist`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        const waitlist = data.success ? data.waitlist : [];
+
+        content.innerHTML = `
+          <h1 style="margin-bottom:2rem;">Waitlist Management</h1>
+          
+          <div class="card" style="margin-bottom:2rem;">
+            <div class="form-group">
+              <label>Filter by Venue</label>
+              <select id="waitlistHallFilter" onchange="filterWaitlist()" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px;">
+                <option value="">All Venues</option>
+                ${halls.map(h => `<option value="${h._id}">${h.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Filter by Date</label>
+              <input type="date" id="waitlistDateFilter" onchange="filterWaitlist()" style="width:100%; padding:0.75rem; border:1px solid var(--border); border-radius:8px;">
+            </div>
+          </div>
+
+          ${waitlist.length === 0 ? `
+            <div class="card" style="text-align:center; padding:3rem;">
+              <p class="text-muted">No waitlist entries found.</p>
+            </div>
+          ` : `
+            <div class="card" style="overflow:visible;">
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; text-align:left;">
+                  <thead style="background:#f1f5f9; border-bottom:1px solid #e2e8f0;">
+                    <tr>
+                      <th style="padding:1rem;">Position</th>
+                      <th style="padding:1rem;">Customer</th>
+                      <th style="padding:1rem;">Venue</th>
+                      <th style="padding:1rem;">Date</th>
+                      <th style="padding:1rem;">Status</th>
+                      <th style="padding:1rem;">Joined</th>
+                      <th style="padding:1rem;">Expires</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${waitlist.map(entry => `
+                      <tr style="border-bottom:1px solid #e2e8f0;">
+                        <td style="padding:1rem; font-weight:600;">#${entry.position}</td>
+                        <td style="padding:1rem;">
+                          <div style="font-weight:500;">${entry.user ? entry.user.name : 'N/A'}</div>
+                          <div style="font-size:0.85rem; color:var(--text-secondary);">${entry.user ? entry.user.email : ''}</div>
+                        </td>
+                        <td style="padding:1rem;">${entry.hall ? entry.hall.name : 'N/A'}</td>
+                        <td style="padding:1rem;">${formatDate(entry.date)}</td>
+                        <td style="padding:1rem;">
+                          <span class="badge badge-${entry.status === 'notified' ? 'success' : 'warning'}">
+                            ${entry.status === 'notified' ? 'Notified' : 'Pending'}
+                          </span>
+                        </td>
+                        <td style="padding:1rem; font-size:0.9rem;">${new Date(entry.createdAt).toLocaleDateString()}</td>
+                        <td style="padding:1rem; font-size:0.9rem;">${new Date(entry.expiresAt).toLocaleDateString()}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `}
+        `;
+      } catch (error) {
+        console.error('Error loading waitlist:', error);
+        content.innerHTML = '<p class="text-muted">Failed to load waitlist.</p>';
+      }
+    }
+
+    async function filterWaitlist() {
+      const hallId = document.getElementById('waitlistHallFilter')?.value;
+      const date = document.getElementById('waitlistDateFilter')?.value;
+      const token = sessionStorage.getItem('token');
+
+      try {
+        const params = new URLSearchParams();
+        if (hallId) params.append('hallId', hallId);
+        if (date) params.append('date', date);
+
+        const response = await fetch(`${API_URL}/owner/waitlist?${params}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        const waitlist = data.success ? data.waitlist : [];
+
+        // Update table content
+        const tbody = document.querySelector('#ownerContent table tbody');
+        if (tbody) {
+          tbody.innerHTML = waitlist.map(entry => `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+              <td style="padding:1rem; font-weight:600;">#${entry.position}</td>
+              <td style="padding:1rem;">
+                <div style="font-weight:500;">${entry.user ? entry.user.name : 'N/A'}</div>
+                <div style="font-size:0.85rem; color:var(--text-secondary);">${entry.user ? entry.user.email : ''}</div>
+              </td>
+              <td style="padding:1rem;">${entry.hall ? entry.hall.name : 'N/A'}</td>
+              <td style="padding:1rem;">${formatDate(entry.date)}</td>
+              <td style="padding:1rem;">
+                <span class="badge badge-${entry.status === 'notified' ? 'success' : 'warning'}">
+                  ${entry.status === 'notified' ? 'Notified' : 'Pending'}
+                </span>
+              </td>
+              <td style="padding:1rem; font-size:0.9rem;">${new Date(entry.createdAt).toLocaleDateString()}</td>
+              <td style="padding:1rem; font-size:0.9rem;">${new Date(entry.expiresAt).toLocaleDateString()}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (error) {
+        console.error('Error filtering waitlist:', error);
+      }
+    }
+
+    initOwner();
+  </script>
+</body>
+
+</html>

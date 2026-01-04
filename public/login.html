@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <div class="auth-container">
+    <!-- Left Banner -->
+    <div class="auth-banner"
+      style="background-image: linear-gradient(135deg, rgba(79, 70, 229, 0.9), rgba(139, 92, 246, 0.9)), url('https://images.unsplash.com/photo-1519167758481-83f550bb49b3?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');">
+      <div class="navbar-brand" style="color: white; font-size: 1.8rem;">
+        🏛️ Event Hall Booking
+      </div>
+      <div class="auth-quote">
+        "Find the perfect venue for your next unforgettable moment."
+      </div>
+      <div>
+        <p>© 2024 Event Hall Booking</p>
+      </div>
+    </div>
+
+    <!-- Right Form -->
+    <div class="auth-form-wrapper">
+      <div class="mb-4">
+        <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="loginTitle">Welcome User</h1>
+        <p class="text-muted" id="loginSubtitle">Please enter your details to sign in.</p>
+      </div>
+
+      <!-- Login Tabs -->
+      <div
+        style="background: #f1f5f9; padding: 0.5rem; border-radius: 12px; display: flex; gap: 0.5rem; margin-bottom: 2rem;">
+        <button class="btn w-full" id="tabUser" onclick="switchTab('user')"
+          style="background: white; shadow: var(--shadow-sm); border: 1px solid var(--border);">
+          User Login
+        </button>
+        <button class="btn w-full" id="tabOwner" onclick="switchTab('owner')"
+          style="background: transparent; border: 1px solid transparent; color: var(--text-muted);">
+          Owner Login
+        </button>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" placeholder="Enter your email" required>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" required>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; color: #64748b; font-size: 0.9rem;">
+            <input type="checkbox"> Remember me
+          </label>
+          <a href="/forgot-password.html"
+            style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">Forgot
+            password?</a>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-full" id="loginBtn">
+          Sign in
+        </button>
+
+        <button type="button" class="btn btn-secondary w-full" style="margin-top: 1rem;" id="googleBtn">
+          Sign in with Google
+        </button>
+      </form>
+
+      <div style="margin-top: 2rem; text-align: center;" id="signupSection">
+        <p class="text-muted">
+          Don't have an account? <a href="/signup.html"
+            style="color: var(--primary); font-weight: 600; text-decoration: none;">Sign up for free</a>
+        </p>
+      </div>
+
+      <div style="margin-top: auto; padding-top: 2rem; text-align: center;">
+        <a href="/" style="color: var(--text-muted); font-size: 0.9rem; text-decoration: none;">← Back to Home</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentRole = 'user';
+
+    function switchTab(role) {
+      currentRole = role;
+      const tabUser = document.getElementById('tabUser');
+      const tabOwner = document.getElementById('tabOwner');
+      const title = document.getElementById('loginTitle');
+      const signupSec = document.getElementById('signupSection');
+      const googleBtn = document.getElementById('googleBtn');
+
+      if (role === 'user') {
+        tabUser.style.backgroundColor = 'white';
+        tabUser.style.color = 'var(--text-main)';
+        tabUser.style.borderColor = 'var(--border)';
+        tabUser.style.boxShadow = 'var(--shadow-sm)';
+
+        tabOwner.style.backgroundColor = 'transparent';
+        tabOwner.style.color = 'var(--text-muted)';
+        tabOwner.style.borderColor = 'transparent';
+        tabOwner.style.boxShadow = 'none';
+
+        title.textContent = 'Welcome User';
+        signupSec.style.display = 'block';
+        googleBtn.style.display = 'inline-block';
+      } else {
+        tabOwner.style.backgroundColor = 'white';
+        tabOwner.style.color = 'var(--text-main)';
+        tabOwner.style.borderColor = 'var(--border)';
+        tabOwner.style.boxShadow = 'var(--shadow-sm)';
+
+        tabUser.style.backgroundColor = 'transparent';
+        tabUser.style.color = 'var(--text-muted)';
+        tabUser.style.borderColor = 'transparent';
+        tabUser.style.boxShadow = 'none';
+
+        title.textContent = 'Partner Login';
+        signupSec.style.display = 'none'; // Hide signup for owners
+        googleBtn.style.display = 'none'; // Owners usually don't use google login yet
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const loginBtn = document.getElementById('loginBtn');
+
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in...';
+
+      const result = await login(email, password);
+
+      if (result.success) {
+        // Enforce Role Check based on Tab
+        if (currentRole === 'owner' && result.user.role !== 'owner' && result.user.role !== 'admin') {
+          showAlert('Access Denied: This account is not an Owner account.', 'error');
+          loginBtn.disabled = false;
+          loginBtn.textContent = 'Sign in';
+          return;
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirect = urlParams.get('redirect');
+        if (redirect) window.location.href = redirect;
+        else if (result.user.role === 'admin') window.location.href = '/admin.html';
+        else if (result.user.role === 'owner') window.location.href = '/owner.html';
+        else window.location.href = '/profile.html';
+      } else {
+        showAlert(result.message || 'Login failed', 'error');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign in';
+      }
+    }
+  </script>
+</body>
+
+</html>

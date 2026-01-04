@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hall Details - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">🏛️ Event Hall Booking</a>
+      <button class="navbar-toggle" onclick="toggleMobileMenu()">☰</button>
+      <ul class="navbar-nav">
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/halls.html">Halls</a></li>
+        <li><a href="/login.html">Login</a></li>
+        <li><a href="/signup.html">Sign Up</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container" style="padding: 2rem 2rem 4rem;">
+    <div id="hallContent">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading details...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison Bar (Floating) -->
+  <div id="comparisonBar" class="comparison-bar" style="display: none;">
+    <div class="container">
+      <div class="comparison-bar-content">
+        <div class="comparison-bar-header">
+          <span class="comparison-count">0 halls selected</span>
+          <button onclick="clearComparison()" class="btn btn-secondary btn-sm">Clear All</button>
+        </div>
+        <div id="comparisonHalls" class="comparison-halls-list"></div>
+        <button onclick="openComparison()" class="btn btn-primary comparison-view-btn" disabled>
+          Compare (0)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentHall = null;
+
+    async function loadHallDetails() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hallId = urlParams.get('id');
+
+      if (!hallId) {
+        window.location.href = '/halls.html';
+        return;
+      }
+
+      const [hall, user] = await Promise.all([
+        getHall(hallId),
+        getCurrentUser()
+      ]);
+
+      if (!hall) {
+        document.getElementById('hallContent').innerHTML = `
+          <div style="text-align: center; padding: 4rem;">
+            <h2>Hall not found</h2>
+            <a href="/halls.html" class="btn btn-primary" style="margin-top: 1rem;">Browse Halls</a>
+          </div>
+        `;
+        return;
+      }
+
+      currentHall = hall;
+      displayHallDetails(hall, user);
+    }
+
+    function displayHallDetails(hall, user) {
+      const container = document.getElementById('hallContent');
+
+      container.innerHTML = `
+        <div style="margin-bottom: 1.5rem;">
+           <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">${hall.name}</h1>
+           <div style="display: flex; gap: 1rem; align-items: center; color: var(--text-muted);">
+             <span>📍 ${hall.location}</span>
+             <span>•</span>
+             <span>⭐ ${hall.rating} (${hall.reviews} reviews)</span>
+             ${hall.status === 'pending' ? '<span class="badge badge-warning">Pending Approval</span>' : ''}
+           </div>
+        </div>
+
+        <!-- Gallery Grid (Airbnb Style) -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; height: 500px; margin-bottom: 2rem; border-radius: 16px; overflow: hidden;">
+          <div style="height: 100%;">
+            <img src="${hall.images[0]}" alt="${hall.name}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;">
+          </div>
+          <div style="display: grid; grid-template-rows: 1fr 1fr; gap: 1rem; height: 100%;">
+            <img src="${hall.images[1] || hall.images[0]}" alt="${hall.name}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;">
+            <img src="${hall.images[2] || hall.images[0]}" alt="${hall.name}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;">
+          </div>
+        </div>
+
+        <!-- Two Column Layout: Info + Sidebar -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 4rem; position: relative;">
+          
+          <!-- Left Content -->
+          <div>
+            <div style="padding-bottom: 2rem; border-bottom: 1px solid var(--border);">
+               <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">About this venue</h2>
+               <p style="font-size: 1.1rem; line-height: 1.8; color: var(--text-muted); white-space: pre-wrap;">${hall.description}</p>
+            </div>
+
+            <!-- Availability Calendar -->
+            <div style="padding: 2rem 0; border-bottom: 1px solid var(--border);">
+              <h2 style="font-size: 1.5rem; margin-bottom: 1rem;">Availability</h2>
+              <p style="color: var(--text-muted); margin-bottom: 0.75rem; font-size: 0.95rem;">
+                Select a date to view availability. ${user && user.role === 'owner' && user.id === hall.ownerId ? 'Click on a date to block or unblock it for this venue.' : 'Booked or blocked dates cannot be reserved.'}
+              </p>
+              <div id="availabilityCalendar"></div>
+              <div style="display:flex; gap:1rem; margin-top:0.75rem; font-size:0.85rem; color:var(--text-muted); flex-wrap:wrap;">
+                <span><span style="display:inline-block;width:12px;height:12px;background:#e5e7eb;border-radius:3px;margin-right:4px;"></span> Available</span>
+                <span><span style="display:inline-block;width:12px;height:12px;background:#f97373;border-radius:3px;margin-right:4px;"></span> Booked</span>
+                <span><span style="display:inline-block;width:12px;height:12px;background:#facc15;border-radius:3px;margin-right:4px;"></span> Blocked</span>
+              </div>
+            </div>
+
+            <div style="padding: 2rem 0; border-bottom: 1px solid var(--border);">
+               <h2 style="font-size: 1.5rem; margin-bottom: 1.5rem;">What this place offers</h2>
+               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  ${Array.isArray(hall.amenities) ? hall.amenities.map(am => `
+                    <div style="display: flex; align-items: center; gap: 0.8rem; font-size: 1.1rem;">
+                      <span style="color: var(--primary);">✓</span> ${am}
+                    </div>
+                  `).join('') : '<p>No amenities listed.</p>'}
+               </div>
+            </div>
+
+            <div style="padding: 2rem 0; border-bottom: 1px solid var(--border);">
+               <h2 style="font-size: 1.5rem; margin-bottom: 1.5rem;">Details</h2>
+               <ul style="list-style: none; display: grid; gap: 1rem; font-size: 1.1rem;">
+                 <li><strong>Capacity:</strong> ${hall.capacity} Guests</li>
+                 <li><strong>Address:</strong> ${hall.address}</li>
+                 <li><strong>Category:</strong> ${hall.category}</li>
+               </ul>
+            </div>
+            
+            <!-- Map Section -->
+            <div style="padding: 2rem 0;">
+               <h2 style="font-size: 1.5rem; margin-bottom: 1.5rem;">Where you'll be</h2>
+               ${hall.lat && hall.lng ? `
+                 <div style="width: 100%; height: 450px; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-sm);">
+                    <iframe 
+                      width="100%" 
+                      height="100%" 
+                      frameborder="0" 
+                      style="border:0" 
+                      src="https://maps.google.com/maps?q=${hall.lat},${hall.lng}&z=15&output=embed">
+                    </iframe>
+                 </div>
+               ` : '<p style="color: var(--text-muted);">Map not available.</p>'}
+            </div>
+          </div>
+
+          <!-- Right Sidebar (Sticky) -->
+          <div style="position: relative;">
+            <div style="position: sticky; top: 100px; background: white; padding: 2rem; border-radius: 16px; box-shadow: var(--shadow-lg); border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <span style="font-size: 1.5rem; font-weight: 700;">${formatCurrency(hall.price)}</span>
+                <span style="color: var(--text-muted);">per event</span>
+              </div>
+
+              ${hall.status === 'approved'
+          ? (user && user.id === hall.ownerId
+            ? `<a href="/owner.html" class="btn btn-secondary w-full" style="padding: 1rem; font-size: 1.1rem; margin-bottom: 1rem;">Manage Venue</a>`
+            : `<a href="/booking.html?hallId=${hall._id}" class="btn btn-primary w-full" style="padding: 1rem; font-size: 1.1rem; margin-bottom: 0.5rem;">Reserve</a>
+                       <button onclick="toggleCompare('${hall._id}'); updateComparisonBar();" class="btn btn-secondary w-full compare-btn" data-hall-id="${hall._id}" style="padding: 1rem; font-size: 1.1rem; margin-bottom: 1rem;">
+                         <span class="compare-icon">⚖️</span> Add to Comparison
+                       </button>
+                       <p style="text-align: center; color: var(--text-muted); font-size: 0.9rem;">You won't be charged yet</p>`
+          )
+          : `
+                <div style="background: #fef3c7; color: #92400e; padding: 1rem; border-radius: 8px; text-align: center; font-weight: 600;">
+                  Approval Pending
+                </div>
+              `}
+              
+              <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-weight: 600;">
+                <span>Total</span>
+                <span>${formatCurrency(hall.price)}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      `;
+
+      // After rendering, build availability calendar
+      buildAvailabilityCalendar(hall, user);
+      
+      // Update compare button state
+      setTimeout(() => {
+        updateCompareButtons();
+        updateComparisonBar();
+      }, 100);
+    }
+
+    // Simple month-view calendar that calls backend availability API
+    async function buildAvailabilityCalendar(hall, user) {
+      const container = document.getElementById('availabilityCalendar');
+      if (!container) return;
+
+      const today = new Date();
+      let currentMonth = today.getMonth();
+      let currentYear = today.getFullYear();
+
+      async function renderCalendar() {
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const from = firstDay.toISOString().split('T')[0];
+        const to = lastDay.toISOString().split('T')[0];
+
+        const availability = await getHallAvailability(hall._id, from, to);
+        const statusByDate = {};
+        availability.forEach(a => {
+          statusByDate[a.date] = a.status;
+        });
+
+        const monthLabel = firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+        let html = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <button type="button" style="border:none;background:none;cursor:pointer;font-size:1.2rem;" id="calPrevBtn">&#8592;</button>
+            <span style="font-weight:600;">${monthLabel}</span>
+            <button type="button" style="border:none;background:none;cursor:pointer;font-size:1.2rem;" id="calNextBtn">&#8594;</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:0.8rem;margin-bottom:4px;color:var(--text-muted);">
+            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+          </div>
+        `;
+
+        const startWeekDay = firstDay.getDay(); // 0-6
+        html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+
+        for (let i = 0; i < startWeekDay; i++) {
+          html += `<div></div>`;
+        }
+
+        const isOwner = user && user.role === 'owner' && user.id === hall.ownerId;
+
+        for (let d = 1; d <= lastDay.getDate(); d++) {
+          const dateObj = new Date(currentYear, currentMonth, d);
+          const ds = dateObj.toISOString().split('T')[0];
+          const status = statusByDate[ds] || 'available';
+
+          let bg = '#e5e7eb';
+          let color = '#111827';
+          let cursor = 'pointer';
+          let title = 'Available';
+
+          if (status === 'booked') {
+            bg = '#f97373';
+            color = 'white';
+            cursor = 'not-allowed';
+            title = 'Booked';
+          } else if (status === 'blocked') {
+            bg = '#facc15';
+            color = '#111827';
+            cursor = isOwner ? 'pointer' : 'not-allowed';
+            title = 'Blocked';
+          }
+
+          // Past dates: show as disabled
+          const todayMid = new Date();
+          todayMid.setHours(0, 0, 0, 0);
+          const isPast = dateObj < todayMid;
+          if (isPast && status === 'available') {
+            bg = '#f3f4f6';
+            color = '#9ca3af';
+            cursor = 'not-allowed';
+          }
+
+          html += `
+            <button 
+              type="button"
+              class="calendar-day"
+              data-date="${ds}"
+              data-status="${status}"
+              title="${title}"
+              style="
+                border:none;
+                border-radius:6px;
+                padding:6px 0;
+                font-size:0.85rem;
+                background:${bg};
+                color:${color};
+                cursor:${cursor};
+              "
+            >
+              ${d}
+            </button>
+          `;
+        }
+
+        html += `</div>`;
+        container.innerHTML = html;
+
+        document.getElementById('calPrevBtn').onclick = () => {
+          currentMonth -= 1;
+          if (currentMonth < 0) {
+            currentMonth = 11;
+            currentYear -= 1;
+          }
+          renderCalendar();
+        };
+        document.getElementById('calNextBtn').onclick = () => {
+          currentMonth += 1;
+          if (currentMonth > 11) {
+            currentMonth = 0;
+            currentYear += 1;
+          }
+          renderCalendar();
+        };
+
+        // Attach click handlers
+        container.querySelectorAll('.calendar-day').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const date = btn.getAttribute('data-date');
+            const status = btn.getAttribute('data-status');
+
+            // Owners can toggle block/unblock
+            if (isOwner) {
+              if (status === 'booked') {
+                showAlert('This date already has a booking and cannot be changed.', 'error');
+                return;
+              }
+              const action = status === 'blocked' ? 'unblock' : 'block';
+              const result = await updateHallBlockedDates(hall._id, [date], action);
+              if (result.success) {
+                showAlert(`Date ${action}ed successfully`, 'success');
+                renderCalendar();
+              } else {
+                showAlert(result.message || 'Failed to update date', 'error');
+              }
+              return;
+            }
+
+            // Regular users: navigate to booking page if date is available
+            if (status === 'available') {
+              window.location.href = `/booking.html?hallId=${hall._id}&date=${date}`;
+            }
+          });
+        });
+      }
+
+      renderCalendar();
+    }
+
+    loadHallDetails();
+    
+    // Initialize comparison bar if it exists
+    if (typeof updateComparisonBar === 'function') {
+      updateComparisonBar();
+    }
+  </script>
+</body>
+
+</html>

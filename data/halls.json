@@ -1,0 +1,71 @@
+[
+  {
+    "id": 1,
+    "name": "ak's party hall",
+    "category": "Party Hall",
+    "location": "Chikkodi, Belagavi, Karnataka",
+    "lat": 16.4414011,
+    "lng": 74.6048946,
+    "price": "200",
+    "capacity": "200",
+    "address": "Address Placeholder",
+    "description": "good",
+    "amenities": [
+      "AC"
+    ],
+    "images": [
+      "/uploads/1765035524342-897680425.webp",
+      "/uploads/1765035524343-407884824.webp",
+      "/uploads/1765035524345-940651475.jpeg",
+      "/uploads/1765035524346-559004318.webp"
+    ],
+    "ownerId": 2,
+    "status": "approved",
+    "rating": 0,
+    "reviews": 0
+  },
+  {
+    "id": 2,
+    "name": "RG's party hall",
+    "category": "Party Hall",
+    "location": "Belagavi, Belagavi, Karnataka",
+    "lat": 15.833642959769106,
+    "lng": 74.51823548614156,
+    "price": "1500",
+    "capacity": "300",
+    "address": "Address Placeholder",
+    "description": "Excellent",
+    "amenities": [
+      "AC"
+    ],
+    "images": [
+      "/uploads/1765036968645-780844490.png"
+    ],
+    "ownerId": 5,
+    "status": "approved",
+    "rating": 0,
+    "reviews": 0
+  },
+  {
+    "id": 3,
+    "name": "ay",
+    "category": "Birthday Hall",
+    "location": "Belagavi, Belagavi, Karnataka",
+    "lat": 15.819751206273336,
+    "lng": 74.49944134303868,
+    "price": "3000",
+    "capacity": "150",
+    "address": "Address Placeholder",
+    "description": "Good ",
+    "amenities": [
+      "AC"
+    ],
+    "images": [
+      "/uploads/1765176624561-249623588.png"
+    ],
+    "ownerId": 5,
+    "status": "pending",
+    "rating": 0,
+    "reviews": 0
+  }
+]

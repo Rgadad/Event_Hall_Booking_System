@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Management - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">🏛️ Event Hall Booking</a>
+      <button class="navbar-toggle" onclick="toggleMobileMenu()">☰</button>
+      <ul class="navbar-nav">
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/halls.html">Halls</a></li>
+        <li><a href="/profile.html">My Account</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container" style="padding: 2rem 2rem 4rem;">
+    <div id="bookingManagementContent">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading booking details...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <!-- Date Change Modal -->
+  <div id="dateChangeModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>Request Date Change</h2>
+        <button onclick="closeModal('dateChangeModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+      </div>
+      <form id="dateChangeForm" onsubmit="submitDateChange(event)">
+        <div class="form-group">
+          <label>New Date</label>
+          <input type="date" id="newDateInput" required>
+          <small id="newDateAvailability" style="display: block; margin-top: 0.5rem;"></small>
+        </div>
+        <div class="form-group">
+          <label>Reason (Optional)</label>
+          <textarea id="dateChangeReason" rows="3" placeholder="Please provide a reason for the date change..."></textarea>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Submit Request</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('dateChangeModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add-on Change Modal -->
+  <div id="addonChangeModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>Modify Add-on Services</h2>
+        <button onclick="closeModal('addonChangeModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+      </div>
+      <div id="addonSelectionContainer"></div>
+      <form id="addonChangeForm" onsubmit="submitAddonChange(event)">
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Reason (Optional)</label>
+          <textarea id="addonChangeReason" rows="3" placeholder="Please provide a reason for the change..."></textarea>
+        </div>
+        <div id="newPriceBreakdown" style="margin: 1rem 0; padding: 1rem; background: var(--bg-muted); border-radius: 8px; display: none;">
+          <strong>New Total: <span id="newTotalAmount"></span></strong>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Submit Request</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addonChangeModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Cancel Booking Modal -->
+  <div id="cancelBookingModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2>Cancel Booking</h2>
+        <button onclick="closeModal('cancelBookingModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+      </div>
+      <div id="refundPolicyInfo" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-muted); border-radius: 8px;"></div>
+      <form id="cancelBookingForm" onsubmit="submitCancellation(event)">
+        <div class="form-group">
+          <label>Reason for Cancellation</label>
+          <textarea id="cancellationReason" rows="3" placeholder="Please provide a reason..." required></textarea>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="submit" class="btn btn-danger" style="flex: 1;">Confirm Cancellation</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('cancelBookingModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentBooking = null;
+    let currentHall = null;
+
+    async function loadBookingManagement() {
+      const user = await getCurrentUser();
+      if (!user) {
+        window.location.href = '/login.html';
+        return;
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const bookingId = urlParams.get('id');
+
+      if (!bookingId) {
+        window.location.href = '/profile.html';
+        return;
+      }
+
+      await loadBookingDetails(bookingId);
+    }
+
+    async function loadBookingDetails(bookingId) {
+      const token = sessionStorage.getItem('token');
+      try {
+        const response = await fetch(`${API_URL}/bookings/${bookingId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          showAlert(data.message || 'Failed to load booking', 'error');
+          window.location.href = '/profile.html';
+          return;
+        }
+
+        currentBooking = data.booking;
+        currentHall = currentBooking.hall;
+
+        displayBookingDetails();
+      } catch (error) {
+        console.error('Error loading booking:', error);
+        showAlert('Failed to load booking details', 'error');
+      }
+    }
+
+    function displayBookingDetails() {
+      const container = document.getElementById('bookingManagementContent');
+      const booking = currentBooking;
+      const hall = currentHall;
+
+      const isCancelled = booking.status === 'cancelled';
+      const hasPendingModifications = booking.modifications && booking.modifications.some(m => m.status === 'pending');
+
+      container.innerHTML = `
+        <div style="margin-bottom: 2rem;">
+          <a href="/profile.html" style="color: var(--text-secondary); text-decoration: none; font-weight: 500;">← Back to My Bookings</a>
+        </div>
+
+        <h1 style="margin-bottom: 2rem;">Booking Details</h1>
+
+        <!-- Booking Status Card -->
+        <div class="card" style="margin-bottom: 2rem;">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1.5rem;">
+            <div>
+              <h2 style="margin: 0 0 0.5rem 0;">${hall.name}</h2>
+              <p style="color: var(--text-secondary); margin: 0;">📍 ${hall.location}</p>
+            </div>
+            <span class="badge badge-${booking.status === 'confirmed' ? 'success' : booking.status === 'cancelled' ? 'danger' : 'warning'}">
+              ${booking.status.toUpperCase()}
+            </span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+            <div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Booking ID</div>
+              <div style="font-weight: 600;">#${booking._id.toString().substring(0, 8)}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Event Date</div>
+              <div style="font-weight: 600;">
+                ${booking.isMultiDay && booking.startDate && booking.endDate
+                  ? `${formatDate(booking.startDate)} - ${formatDate(booking.endDate)} (${Math.floor((new Date(booking.endDate) - new Date(booking.startDate)) / (1000 * 60 * 60 * 24)) + 1} days)`
+                  : formatDate(booking.date || booking.startDate)}
+              </div>
+            </div>
+            <div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Total Amount</div>
+              <div style="font-weight: 600; font-size: 1.2rem; color: var(--primary);">${formatCurrency(booking.amount)}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.25rem;">Payment Status</div>
+              <div style="font-weight: 600;">${booking.paymentStatus || 'paid'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        ${!isCancelled ? `
+          <div style="display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;">
+            <button onclick="openDateChangeModal()" class="btn btn-secondary" ${hasPendingModifications ? 'disabled' : ''}>
+              📅 Request Date Change
+            </button>
+            <button onclick="openAddonChangeModal()" class="btn btn-secondary" ${hasPendingModifications ? 'disabled' : ''}>
+              ⚙️ Modify Add-ons
+            </button>
+            <button onclick="downloadInvoice()" class="btn btn-secondary">
+              📄 Download Invoice
+            </button>
+            <button onclick="openCancelModal()" class="btn btn-danger">
+              ❌ Cancel Booking
+            </button>
+          </div>
+        ` : ''}
+
+        <!-- Pending Modifications -->
+        ${hasPendingModifications ? `
+          <div class="card" style="margin-bottom: 2rem; border-left: 4px solid var(--accent);">
+            <h3 style="margin-bottom: 1rem;">Pending Modification Requests</h3>
+            ${booking.modifications.filter(m => m.status === 'pending').map(mod => `
+              <div style="padding: 1rem; background: var(--bg-muted); border-radius: 8px; margin-bottom: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                  <div>
+                    <strong>${mod.type === 'date_change' ? 'Date Change Request' : 'Add-on Change Request'}</strong>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                      ${mod.type === 'date_change' 
+                        ? `From ${formatDate(mod.oldValue)} to ${formatDate(mod.newValue)}`
+                        : `Add-ons modification requested`}
+                    </div>
+                    ${mod.reason ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">Reason: ${mod.reason}</div>` : ''}
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                      Requested on ${new Date(mod.requestedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <span class="badge badge-warning">Pending Owner Approval</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- Booking Information -->
+        <div class="grid grid-2" style="margin-bottom: 2rem;">
+          <div class="card">
+            <h3 style="margin-bottom: 1rem;">Event Details</h3>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">Event Type</div>
+                <div style="font-weight: 600;">${booking.eventType || 'Not specified'}</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">Number of Guests</div>
+                <div style="font-weight: 600;">${booking.guestCount || 'Not specified'}</div>
+              </div>
+              ${booking.specialRequests ? `
+                <div>
+                  <div style="font-size: 0.85rem; color: var(--text-secondary);">Special Requests</div>
+                  <div style="font-weight: 600;">${booking.specialRequests}</div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom: 1rem;">Price Breakdown</h3>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+              ${booking.priceBreakdown ? `
+                ${booking.isMultiDay && booking.priceBreakdown.days ? `
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Base Price (${booking.priceBreakdown.days} days)</span>
+                    <span>${formatCurrency(booking.priceBreakdown.basePrice || 0)}</span>
+                  </div>
+                  ${booking.priceBreakdown.adjustments ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Date Adjustments</span>
+                      <span>${formatCurrency(booking.priceBreakdown.adjustments)}</span>
+                    </div>
+                  ` : ''}
+                  ${booking.priceBreakdown.multiDayDiscount > 0 ? `
+                    <div style="display: flex; justify-content: space-between; color: #10b981;">
+                      <span>Multi-day Discount (${booking.priceBreakdown.discountPercentage}%)</span>
+                      <span>-${formatCurrency(booking.priceBreakdown.multiDayDiscount)}</span>
+                    </div>
+                  ` : ''}
+                  ${booking.priceBreakdown.addonsTotal ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Add-ons</span>
+                      <span>+${formatCurrency(booking.priceBreakdown.addonsTotal)}</span>
+                    </div>
+                  ` : ''}
+                ` : `
+                  <div style="display: flex; justify-content: space-between;">
+                    <span>Base Price</span>
+                    <span>${formatCurrency(booking.priceBreakdown.basePrice || 0)}</span>
+                  </div>
+                  ${booking.priceBreakdown.weekdayWeekendAdjustment ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Weekend Surcharge</span>
+                      <span>+${formatCurrency(booking.priceBreakdown.weekdayWeekendAdjustment)}</span>
+                    </div>
+                  ` : ''}
+                  ${booking.priceBreakdown.peakSeasonAdjustment ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Peak Season Surcharge</span>
+                      <span>+${formatCurrency(booking.priceBreakdown.peakSeasonAdjustment)}</span>
+                    </div>
+                  ` : ''}
+                  ${booking.priceBreakdown.lastMinuteAdjustment ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Last Minute Discount</span>
+                      <span>${formatCurrency(booking.priceBreakdown.lastMinuteAdjustment)}</span>
+                    </div>
+                  ` : ''}
+                  ${booking.priceBreakdown.addonsTotal ? `
+                    <div style="display: flex; justify-content: space-between; color: var(--text-secondary);">
+                      <span>Add-ons</span>
+                      <span>+${formatCurrency(booking.priceBreakdown.addonsTotal)}</span>
+                    </div>
+                  ` : ''}
+                `}
+                <div style="display: flex; justify-content: space-between; padding-top: 1rem; border-top: 1px solid var(--border); font-weight: 700; font-size: 1.1rem;">
+                  <span>Total</span>
+                  <span>${formatCurrency(booking.amount)}</span>
+                </div>
+              ` : `
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Total Amount</span>
+                  <span>${formatCurrency(booking.amount)}</span>
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+
+        <!-- Current Add-ons -->
+        ${booking.selectedAddons && booking.selectedAddons.length > 0 ? `
+          <div class="card">
+            <h3 style="margin-bottom: 1rem;">Current Add-on Services</h3>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+              ${booking.selectedAddons.map(addonKey => {
+                const addon = hall.addons && Array.isArray(hall.addons) ? hall.addons.find(a => a.key === addonKey) : null;
+                return addon ? `
+                  <div style="display: flex; justify-content: space-between; padding: 0.75rem; background: var(--bg-muted); border-radius: 8px;">
+                    <span>${addon.name}</span>
+                    <span>${formatCurrency(addon.price || 0)} ${addon.type === 'per_guest' ? 'per guest' : 'per event'}</span>
+                  </div>
+                ` : '';
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Cancellation Info -->
+        ${isCancelled && booking.refundAmount !== undefined ? `
+          <div class="card" style="border-left: 4px solid var(--accent);">
+            <h3 style="margin-bottom: 1rem;">Cancellation Details</h3>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">Refund Amount</div>
+                <div style="font-weight: 600; font-size: 1.2rem; color: var(--primary);">${formatCurrency(booking.refundAmount)}</div>
+              </div>
+              <div>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">Refund Policy</div>
+                <div style="font-weight: 600;">${booking.refundPolicy || 'N/A'}</div>
+              </div>
+              ${booking.cancellationReason ? `
+                <div>
+                  <div style="font-size: 0.85rem; color: var(--text-secondary);">Reason</div>
+                  <div>${booking.cancellationReason}</div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
+      `;
+    }
+
+    function openDateChangeModal() {
+      const modal = document.getElementById('dateChangeModal');
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const minDate = tomorrow.toISOString().split('T')[0];
+      
+      const isMultiDay = currentBooking.isMultiDay;
+      const modalContent = modal.querySelector('.modal-content');
+      
+      if (isMultiDay) {
+        modalContent.innerHTML = `
+          <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2>Request Date Range Change</h2>
+            <button onclick="closeModal('dateChangeModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+          </div>
+          <form id="dateChangeForm" onsubmit="submitDateChange(event)">
+            <div class="form-group">
+              <label>New Start Date</label>
+              <input type="date" id="newStartDateInput" required min="${minDate}">
+            </div>
+            <div class="form-group">
+              <label>New End Date</label>
+              <input type="date" id="newEndDateInput" required min="${minDate}">
+              <small id="newDateAvailability" style="display: block; margin-top: 0.5rem;"></small>
+            </div>
+            <div class="form-group">
+              <label>Reason (Optional)</label>
+              <textarea id="dateChangeReason" rows="3" placeholder="Please provide a reason for the date change..."></textarea>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+              <button type="submit" class="btn btn-primary" style="flex: 1;">Submit Request</button>
+              <button type="button" class="btn btn-secondary" onclick="closeModal('dateChangeModal')">Cancel</button>
+            </div>
+          </form>
+        `;
+        
+        // Check availability on date change
+        document.getElementById('newEndDateInput').addEventListener('change', async function() {
+          const startDate = document.getElementById('newStartDateInput').value;
+          const endDate = this.value;
+          const availabilityMsg = document.getElementById('newDateAvailability');
+          if (!startDate || !endDate) return;
+
+          const available = await checkAvailability(currentHall._id, startDate, endDate);
+          if (available) {
+            availabilityMsg.style.color = '#10b981';
+            availabilityMsg.textContent = '✓ All dates available';
+          } else {
+            availabilityMsg.style.color = '#ef4444';
+            availabilityMsg.textContent = '✗ Some dates not available';
+          }
+        });
+      } else {
+        modalContent.innerHTML = `
+          <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2>Request Date Change</h2>
+            <button onclick="closeModal('dateChangeModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+          </div>
+          <form id="dateChangeForm" onsubmit="submitDateChange(event)">
+            <div class="form-group">
+              <label>New Date</label>
+              <input type="date" id="newDateInput" required min="${minDate}">
+              <small id="newDateAvailability" style="display: block; margin-top: 0.5rem;"></small>
+            </div>
+            <div class="form-group">
+              <label>Reason (Optional)</label>
+              <textarea id="dateChangeReason" rows="3" placeholder="Please provide a reason for the date change..."></textarea>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+              <button type="submit" class="btn btn-primary" style="flex: 1;">Submit Request</button>
+              <button type="button" class="btn btn-secondary" onclick="closeModal('dateChangeModal')">Cancel</button>
+            </div>
+          </form>
+        `;
+        
+        // Check availability on date change
+        document.getElementById('newDateInput').addEventListener('change', async function() {
+          const newDate = this.value;
+          const availabilityMsg = document.getElementById('newDateAvailability');
+          if (!newDate) return;
+
+          const available = await checkAvailability(currentHall._id, newDate);
+          if (available) {
+            availabilityMsg.style.color = '#10b981';
+            availabilityMsg.textContent = '✓ Available';
+          } else {
+            availabilityMsg.style.color = '#ef4444';
+            availabilityMsg.textContent = '✗ Not Available';
+          }
+        });
+      }
+      
+      modal.style.display = 'flex';
+    }
+
+    function openAddonChangeModal() {
+      const modal = document.getElementById('addonChangeModal');
+      const container = document.getElementById('addonSelectionContainer');
+      
+      if (!currentHall.addons || currentHall.addons.length === 0) {
+        container.innerHTML = '<p class="text-muted">No add-on services available for this venue.</p>';
+        modal.style.display = 'flex';
+        return;
+      }
+
+      const currentAddons = currentBooking.selectedAddons || [];
+      container.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          ${currentHall.addons.map(addon => `
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; border: 1px solid var(--border); padding: 0.75rem; border-radius: 8px; cursor: pointer;">
+              <span>
+                <input type="checkbox" class="addon-checkbox" value="${addon.key}" ${currentAddons.includes(addon.key) ? 'checked' : ''} onchange="updateAddonPrice()" />
+                <span style="margin-left: 0.5rem; font-weight: 500;">${addon.name}</span>
+                <span style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-left: 1.5rem;">
+                  ${addon.type === 'per_guest' ? 'Per guest' : 'Per event'}
+                </span>
+              </span>
+              <span>${formatCurrency(addon.price || 0)}</span>
+            </label>
+          `).join('')}
+        </div>
+      `;
+
+      document.getElementById('addonChangeReason').value = '';
+      updateAddonPrice();
+      modal.style.display = 'flex';
+    }
+
+    async function updateAddonPrice() {
+      const selectedAddons = Array.from(document.querySelectorAll('.addon-checkbox:checked')).map(cb => cb.value);
+      const breakdown = await getPriceQuote(currentHall._id, {
+        date: currentBooking.date,
+        guestCount: currentBooking.guestCount,
+        selectedAddons
+      });
+
+      const breakdownDiv = document.getElementById('newPriceBreakdown');
+      const totalSpan = document.getElementById('newTotalAmount');
+      
+      if (breakdown) {
+        breakdownDiv.style.display = 'block';
+        totalSpan.textContent = formatCurrency(breakdown.total);
+      } else {
+        breakdownDiv.style.display = 'none';
+      }
+    }
+
+    async function submitDateChange(event) {
+      event.preventDefault();
+      const token = sessionStorage.getItem('token');
+      
+      let requestBody = {};
+      const reason = document.getElementById('dateChangeReason').value;
+      requestBody.reason = reason;
+
+      // Check if multi-day or single date
+      const newStartDateInput = document.getElementById('newStartDateInput');
+      const newEndDateInput = document.getElementById('newEndDateInput');
+      const newDateInput = document.getElementById('newDateInput');
+
+      if (newStartDateInput && newEndDateInput && newStartDateInput.value && newEndDateInput.value) {
+        // Multi-day change
+        requestBody.newStartDate = newStartDateInput.value;
+        requestBody.newEndDate = newEndDateInput.value;
+      } else if (newDateInput && newDateInput.value) {
+        // Single date change
+        requestBody.newDate = newDateInput.value;
+      } else {
+        showAlert('Please select a date', 'error');
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/bookings/${currentBooking._id}/request-date-change`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          showAlert('Date change request submitted successfully. Waiting for owner approval.', 'success');
+          closeModal('dateChangeModal');
+          await loadBookingDetails(currentBooking._id);
+        } else {
+          showAlert(data.message || 'Failed to submit request', 'error');
+        }
+      } catch (error) {
+        console.error('Error submitting date change:', error);
+        showAlert('Failed to submit request', 'error');
+      }
+    }
+
+    async function submitAddonChange(event) {
+      event.preventDefault();
+      const selectedAddons = Array.from(document.querySelectorAll('.addon-checkbox:checked')).map(cb => cb.value);
+      const reason = document.getElementById('addonChangeReason').value;
+
+      const token = sessionStorage.getItem('token');
+      try {
+        const response = await fetch(`${API_URL}/bookings/${currentBooking._id}/request-addon-change`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ addons: selectedAddons, reason })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          showAlert('Add-on change request submitted successfully. Waiting for owner approval.', 'success');
+          closeModal('addonChangeModal');
+          await loadBookingDetails(currentBooking._id);
+        } else {
+          showAlert(data.message || 'Failed to submit request', 'error');
+        }
+      } catch (error) {
+        console.error('Error submitting addon change:', error);
+        showAlert('Failed to submit request', 'error');
+      }
+    }
+
+    function openCancelModal() {
+      const modal = document.getElementById('cancelBookingModal');
+      const infoDiv = document.getElementById('refundPolicyInfo');
+
+      const bookingDate = new Date(currentBooking.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      bookingDate.setHours(0, 0, 0, 0);
+      const daysUntilEvent = Math.floor((bookingDate - today) / (1000 * 60 * 60 * 24));
+
+      let refundPolicy = '';
+      if (daysUntilEvent > 30) {
+        refundPolicy = 'Full refund (100%) - Cancelled more than 30 days before event';
+      } else if (daysUntilEvent >= 15) {
+        refundPolicy = '75% refund - Cancelled 15-30 days before event';
+      } else if (daysUntilEvent >= 7) {
+        refundPolicy = '50% refund - Cancelled 7-14 days before event';
+      } else if (daysUntilEvent > 0) {
+        refundPolicy = '25% refund - Cancelled less than 7 days before event';
+      } else {
+        refundPolicy = 'No refund - Cancelled on or after event date';
+      }
+
+      infoDiv.innerHTML = `
+        <strong>Refund Policy:</strong>
+        <p style="margin: 0.5rem 0 0 0;">${refundPolicy}</p>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: var(--text-secondary);">
+          Days until event: ${daysUntilEvent > 0 ? daysUntilEvent : 0}
+        </p>
+      `;
+
+      document.getElementById('cancellationReason').value = '';
+      modal.style.display = 'flex';
+    }
+
+    async function submitCancellation(event) {
+      event.preventDefault();
+      const reason = document.getElementById('cancellationReason').value;
+
+      if (!confirm('Are you sure you want to cancel this booking? This action cannot be undone.')) {
+        return;
+      }
+
+      const token = sessionStorage.getItem('token');
+      try {
+        const response = await fetch(`${API_URL}/bookings/${currentBooking._id}/cancel`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ reason })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          showAlert(`Booking cancelled. Refund: ${formatCurrency(data.refund.amount)} (${data.refund.policy})`, 'success');
+          closeModal('cancelBookingModal');
+          await loadBookingDetails(currentBooking._id);
+        } else {
+          showAlert(data.message || 'Failed to cancel booking', 'error');
+        }
+      } catch (error) {
+        console.error('Error cancelling booking:', error);
+        showAlert('Failed to cancel booking', 'error');
+      }
+    }
+
+    async function downloadInvoice() {
+      const token = sessionStorage.getItem('token');
+      try {
+        const response = await fetch(`${API_URL}/bookings/${currentBooking._id}/invoice`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `invoice-${currentBooking._id}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          showAlert('Invoice downloaded successfully', 'success');
+        } else {
+          showAlert('Failed to download invoice', 'error');
+        }
+      } catch (error) {
+        console.error('Error downloading invoice:', error);
+        showAlert('Failed to download invoice', 'error');
+      }
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.display = 'none';
+    }
+
+    // Close modal on outside click
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+      }
+    });
+
+    loadBookingManagement();
+  </script>
+</body>
+
+</html>
+

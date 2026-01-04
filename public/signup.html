@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <div class="auth-container">
+    <div class="auth-banner"
+      style="background-image: linear-gradient(135deg, rgba(236, 72, 153, 0.9), rgba(139, 92, 246, 0.9)), url('https://images.unsplash.com/photo-1511795409834-ef04bbd61622?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');">
+      <div class="navbar-brand" style="color: white; font-size: 1.8rem;">
+        🏛️ Event Hall Booking
+      </div>
+      <div class="auth-quote">
+        "Host your events with confidence and style."
+      </div>
+      <div>
+        <p>© 2024 Event Hall Booking</p>
+      </div>
+    </div>
+
+    <div class="auth-form-wrapper">
+      <div class="mb-4">
+        <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Create Account</h1>
+        <p class="text-muted">Join us to book or list event halls.</p>
+      </div>
+
+      <div id="signupStep1">
+        <form id="signupForm" onsubmit="handleSignup(event)">
+          <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" placeholder="John Doe" required>
+          </div>
+
+          <div class="form-group">
+            <label for="email">Email Address</label>
+            <input type="email" id="email" placeholder="your@email.com" required>
+          </div>
+
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" placeholder="1234567890" required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" placeholder="••••••" required minlength="6"
+                onkeyup="checkStrength()">
+              <!-- Strength Meter -->
+              <div class="password-strength-meter">
+                <div class="password-strength-bar" id="strengthBar"></div>
+              </div>
+              <div class="password-hint" id="strengthText"></div>
+            </div>
+            <div class="form-group">
+              <label for="confirmPassword">Confirm</label>
+              <input type="password" id="confirmPassword" placeholder="••••••" required minlength="6">
+            </div>
+          </div>
+
+          <!-- Role Selection Removed - Defaulting to User -->
+          <input type="hidden" id="role" value="user">
+
+          <div class="form-group" style="margin-bottom: 2rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 400; font-size: 0.9rem;">
+              <input type="checkbox" id="terms" required>
+              <span>I agree to the <a href="#" style="color: var(--primary);">Terms of Service</a></span>
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-full" id="signupBtn">
+            Create Account
+          </button>
+        </form>
+      </div>
+
+      <!-- Step 2: OTP -->
+      <div id="signupStep2" style="display: none; text-align: center;">
+        <div
+          style="background: #eff6ff; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem;">
+          <span style="font-size: 2rem;">📩</span>
+        </div>
+        <h2 style="margin-bottom: 1rem;">Verify your Email</h2>
+        <p class="text-muted" style="margin-bottom: 2rem;">
+          We sent a verification code to <span id="verifyEmailText" style="font-weight: 600; color: #1e293b;"></span>
+        </p>
+
+        <form onsubmit="handleVerifySignup(event)">
+          <div class="form-group">
+            <input type="text" id="signupOtp" placeholder="0 0 0 0 0 0" maxlength="6" pattern="\d{6}" required
+              style="letter-spacing: 0.8rem; text-align: center; font-size: 1.5rem; font-weight: 700; padding: 1rem;">
+          </div>
+          <button type="submit" class="btn btn-primary w-full" id="verifyBtn" style="margin-top: 1rem;">
+            Verify Email
+          </button>
+          <button type="button" class="btn w-full" style="margin-top: 1rem; color: #64748b;" onclick="showStep1()">
+            Back to details
+          </button>
+        </form>
+      </div>
+
+      <div style="margin-top: 2rem; text-align: center;">
+        <p class="text-muted">
+          Already have an account? <a href="/login.html"
+            style="color: var(--primary); font-weight: 600; text-decoration: none;">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let pendingEmail = '';
+
+    function showStep1() {
+      document.getElementById('signupStep1').style.display = 'block';
+      document.getElementById('signupStep2').style.display = 'none';
+    }
+
+    async function handleSignup(event) {
+      event.preventDefault();
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const phone = document.getElementById('phone').value;
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const role = document.getElementById('role').value;
+      const signupBtn = document.getElementById('signupBtn');
+
+      if (password !== confirmPassword) { showAlert('Passwords do not match', 'error'); return; }
+
+      signupBtn.disabled = true;
+      signupBtn.textContent = 'Sending Code...';
+
+      const result = await register({ name, email, phone, password, role });
+
+      if (result.success && result.requireOtp) {
+        pendingEmail = email;
+        document.getElementById('verifyEmailText').textContent = email;
+        document.getElementById('signupStep1').style.display = 'none';
+        document.getElementById('signupStep2').style.display = 'block';
+      } else {
+        showAlert(result.message || 'Registration failed', 'error');
+        signupBtn.disabled = false;
+        signupBtn.textContent = 'Create Account';
+      }
+    }
+
+    async function handleVerifySignup(event) {
+      event.preventDefault();
+      const otp = document.getElementById('signupOtp').value;
+      const verifyBtn = document.getElementById('verifyBtn');
+      verifyBtn.disabled = true; verifyBtn.textContent = 'Verifying...';
+
+      const result = await verifySignup(pendingEmail, otp);
+      if (result.success) {
+        setTimeout(() => {
+          if (result.user.role === 'owner') window.location.href = '/owner.html';
+          else window.location.href = '/profile.html';
+        }, 500);
+      } else {
+        showAlert(result.message || 'Verification failed', 'error');
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify Email';
+      }
+    }
+
+    // Password Strength Logic
+    function checkStrength() {
+      const password = document.getElementById('password').value;
+      const bar = document.getElementById('strengthBar');
+      const text = document.getElementById('strengthText');
+      let strength = 0;
+
+      if (password.length > 5) strength++;
+      if (password.length > 8) strength++;
+      if (/[A-Z]/.test(password)) strength++;
+      if (/[0-9]/.test(password)) strength++;
+      if (/[^A-Za-z0-9]/.test(password)) strength++;
+
+      bar.className = 'password-strength-bar';
+      if (strength < 2) {
+        bar.classList.add('strength-weak');
+        text.textContent = 'Weak';
+        text.style.color = '#ef4444';
+      } else if (strength < 4) {
+        bar.classList.add('strength-medium');
+        text.textContent = 'Medium';
+        text.style.color = '#f59e0b';
+      } else {
+        bar.classList.add('strength-strong');
+        text.textContent = 'Strong';
+        text.style.color = '#10b981';
+      }
+    }
+  </script>
+</body>
+
+</html>

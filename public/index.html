@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Hall Booking - Find Your Perfect Venue</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">🏛️ Event Hall Booking</a>
+      <button class="navbar-toggle" onclick="toggleMobileMenu()">☰</button>
+      <ul class="navbar-nav">
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/halls.html">Browse Halls</a></li>
+        <li><a href="/login.html">Login</a></li>
+        <li><a href="/signup.html">Sign Up</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <h1>Discover Your Perfect Event Venue</h1>
+      <p>Book stunning event halls for parties, birthdays, weddings, receptions & more</p>
+
+      <div class="search-box">
+        <input type="text" id="heroSearch" placeholder="Search for halls, location, or category...">
+        <button onclick="searchHalls()">Discover</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Categories Section -->
+  <section style="padding: 5rem 0; background: var(--bg-card);">
+    <div class="container">
+      <div class="text-center mb-8">
+        <h2 class="section-title">Popular Categories</h2>
+        <p style="color: var(--text-secondary); font-size: 1.05rem;">Choose the perfect venue type for your event</p>
+      </div>
+
+      <div class="grid grid-4">
+        <div class="category-card" onclick="filterByCategory('Party Hall')">
+          <div class="category-icon">🎉</div>
+          <h3>Party Hall</h3>
+          <p>Celebrate in style</p>
+        </div>
+
+        <div class="category-card" onclick="filterByCategory('Birthday Hall')">
+          <div class="category-icon">🎂</div>
+          <h3>Birthday Hall</h3>
+          <p>Memorable moments</p>
+        </div>
+
+        <div class="category-card" onclick="filterByCategory('Reception Hall')">
+          <div class="category-icon">💐</div>
+          <h3>Reception Hall</h3>
+          <p>Elegant & grand</p>
+        </div>
+
+        <div class="category-card" onclick="filterByCategory('Marriage Hall')">
+          <div class="category-icon">💒</div>
+          <h3>Wedding Hall</h3>
+          <p>Your dream day</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Featured Halls Section -->
+  <section style="padding: 5rem 0; background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);">
+    <div class="container">
+      <div class="text-center mb-8">
+        <h2 class="section-title">Featured Venues</h2>
+        <p style="color: var(--text-secondary); font-size: 1.05rem;">Top-rated halls recommended by our community</p>
+      </div>
+
+      <div id="featuredHalls" class="grid grid-3">
+        <div class="loading" style="grid-column: 1 / -1;">
+          <div class="spinner"></div>
+          <p>Loading featured venues...</p>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 3rem;">
+        <a href="/halls.html" class="btn btn-primary">View All Venues →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Choose Us Section -->
+  <section style="padding: 5rem 0; background: var(--bg-card);">
+    <div class="container">
+      <div class="text-center mb-8">
+        <h2 class="section-title">Why Choose Us?</h2>
+        <p style="color: var(--text-secondary); font-size: 1.05rem;">Making your event planning simple and stress-free</p>
+      </div>
+
+      <div class="grid grid-3">
+        <div style="text-align: center; padding: 2rem; background: var(--primary-bg); border-radius: var(--radius-lg); transition: var(--transition);" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+          <h3>Smart Search</h3>
+          <p>Find venues with advanced filters & geolocation</p>
+        </div>
+
+        <div style="text-align: center; padding: 2rem; background: var(--secondary-bg); border-radius: var(--radius-lg); transition: var(--transition);" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+          <h3>Verified Venues</h3>
+          <p>All halls verified & quality-checked by experts</p>
+        </div>
+
+        <div style="text-align: center; padding: 2rem; background: var(--accent-lighter); border-radius: var(--radius-lg); transition: var(--transition);" onmouseover="this.style.transform='translateY(-5px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">💳</div>
+          <h3>Secure Booking</h3>
+          <p>Safe payments & instant confirmation</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats Section -->
+  <section style="padding: 5rem 0; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, var(--secondary) 100%); color: white;">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-card" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white;">
+          <div class="stat-value" style="background: none; -webkit-text-fill-color: unset; color: white;">500+</div>
+          <div class="stat-label">Venues Listed</div>
+        </div>
+
+        <div class="stat-card" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white;">
+          <div class="stat-value" style="background: none; -webkit-text-fill-color: unset; color: white;">10K+</div>
+          <div class="stat-label">Happy Customers</div>
+        </div>
+
+        <div class="stat-card" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white;">
+          <div class="stat-value" style="background: none; -webkit-text-fill-color: unset; color: white;">50K+</div>
+          <div class="stat-label">Successful Bookings</div>
+        </div>
+
+        <div class="stat-card" style="background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white;">
+          <div class="stat-value" style="background: none; -webkit-text-fill-color: unset; color: white;">24/7</div>
+          <div class="stat-label">Customer Support</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section style="padding: 4rem 0; background: var(--bg-card); text-align: center;">
+    <div class="container">
+      <h2 style="font-size: 2rem; margin-bottom: 1rem;">Ready to Book Your Venue?</h2>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem; font-size: 1.05rem;">Start exploring hundreds of amazing venues today</p>
+      <a href="/halls.html" class="btn btn-primary">Browse All Venues</a>
+      <p style="color: var(--text-tertiary); font-size: 0.9rem; margin-top: 2rem;">First time? <a href="/signup.html" style="color: var(--primary); font-weight: 600; text-decoration: none;">Sign up for free</a></p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer style="background: var(--text-primary); color: white; padding: 3rem 0 1.5rem;">
+    <div class="container" style="margin-bottom: 2rem;">
+      <div class="grid grid-4">
+        <div>
+          <h4 style="margin-bottom: 1rem;">About Us</h4>
+          <ul style="list-style: none;">
+            <li><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">About Event Hall Booking</a></li>
+            <li style="margin-top: 0.5rem;"><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Blog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin-bottom: 1rem;">For Partners</h4>
+          <ul style="list-style: none;">
+            <li><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">List Your Venue</a></li>
+            <li style="margin-top: 0.5rem;"><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Partner Program</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin-bottom: 1rem;">Support</h4>
+          <ul style="list-style: none;">
+            <li><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Help Center</a></li>
+            <li style="margin-top: 0.5rem;"><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Contact Us</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin-bottom: 1rem;">Legal</h4>
+          <ul style="list-style: none;">
+            <li><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Privacy Policy</a></li>
+            <li style="margin-top: 0.5rem;"><a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none; transition: var(--transition);" onmouseover="this.style.color='white'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Terms of Service</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
+      <div class="container">
+        <p style="text-align: center; color: rgba(255,255,255,0.7);">&copy; 2024 Event Hall Booking System. All rights reserved. | Made with ❤️ for your special moments</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js"></script>
+  <script>
+    // Search functionality
+    function searchHalls() {
+      const searchTerm = document.getElementById('heroSearch').value;
+      if (searchTerm.trim()) {
+        window.location.href = `/halls.html?search=${encodeURIComponent(searchTerm)}`;
+      } else {
+        window.location.href = '/halls.html';
+      }
+    }
+
+    // Category filter
+    function filterByCategory(category) {
+      window.location.href = `/halls.html?category=${encodeURIComponent(category)}`;
+    }
+
+    // Load featured halls
+    async function loadFeaturedHalls() {
+      const container = document.getElementById('featuredHalls');
+      try {
+        const response = await fetch(`${API_URL}/halls?limit=3`);
+        const data = await response.json();
+        const halls = data.halls || [];
+
+        if (halls.length === 0) {
+          container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem;"><p style="color: var(--text-secondary);">No venues available yet. Check back soon!</p></div>';
+          return;
+        }
+
+        const featured = halls.slice(0, 3);
+
+        container.innerHTML = featured.map((hall, index) => `
+          <div class="card" style="animation: fadeInUp 0.6s ease-out; animation-delay: ${index * 0.15}s;">
+            <img src="${hall.images?.[0] || 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=500'}" alt="${hall.name}" class="card-img">
+            <div class="card-body">
+              <h3 class="card-title">${hall.name}</h3>
+              <p class="card-text">
+                <strong>📍</strong> ${hall.location}<br>
+                <strong>👥</strong> ${hall.capacity} people<br>
+                <strong>💰</strong> ₹${hall.price}/hour
+              </p>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+                <span class="badge badge-info">${hall.category}</span>
+                <span style="font-size: 0.9rem; color: var(--accent);">⭐ ${hall.rating || 0} (${hall.reviews || 0})</span>
+              </div>
+              <a href="/hall.html?id=${hall._id}" class="btn btn-primary w-full mt-3">View Details</a>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading featured halls:', error);
+        container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem;"><p style="color: var(--text-secondary);">Unable to load venues. Please try again later.</p></div>';
+      }
+    }
+
+    // Add animation style
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadFeaturedHalls);
+
+    // Enter key for search
+    document.getElementById('heroSearch')?.addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') {
+        searchHalls();
+      }
+    });
+  </script>
+</body>
+
+</html>

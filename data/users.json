@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "name": "Admin User",
+    "email": "admin@gmail.com",
+    "password": "admin123",
+    "role": "admin",
+    "phone": "0000000000"
+  },
+  {
+    "id": 2,
+    "name": "Adarsh .k",
+    "email": "00adarsh.kudachi00@gmail.com",
+    "phone": "7829606988",
+    "password": "adarsh18",
+    "role": "owner"
+  },
+  {
+    "id": 3,
+    "name": "Adarsh .k",
+    "email": "adarshkudachi18@gmail.com",
+    "password": "123456",
+    "phone": "7829606988",
+    "role": "user"
+  },
+  {
+    "id": 4,
+    "name": "Ramya Satish Gadad",
+    "email": "ramyagadad05@gmail.com",
+    "password": "Ramya12345",
+    "phone": "6362081201",
+    "role": "user"
+  },
+  {
+    "id": 5,
+    "name": "Ramya Satish Gadad",
+    "email": "ramyagadad08@gmail.com",
+    "phone": "6362081201",
+    "password": "Ramya@5490",
+    "role": "owner"
+  }
+]

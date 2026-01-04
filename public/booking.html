@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Hall - Event Hall Booking</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <style>
+    /* Custom booking layout */
+    .booking-grid {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 4rem;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .booking-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="navbar-brand">🏛️ Event Hall Booking</a>
+      <button class="navbar-toggle" onclick="toggleMobileMenu()">☰</button>
+      <ul class="navbar-nav">
+        <li><a href="/index.html">Home</a></li>
+        <li><a href="/halls.html">Halls</a></li>
+        <li><a href="/profile.html">My Account</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container" style="padding: 3rem 2rem;">
+    <div id="bookingContent">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading booking form...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script>
+    let currentHall = null;
+    let currentBreakdown = null;
+    let isMultiDay = false;
+
+    function toggleMultiDay() {
+      const toggle = document.getElementById('multiDayToggle');
+      const singleGroup = document.getElementById('singleDateGroup');
+      const rangeGroup = document.getElementById('dateRangeGroup');
+      const singleDateInput = document.getElementById('eventDate');
+      const startDateInput = document.getElementById('startDate');
+      const endDateInput = document.getElementById('endDate');
+
+      isMultiDay = toggle.checked;
+
+      if (isMultiDay) {
+        singleGroup.style.display = 'none';
+        rangeGroup.style.display = 'block';
+        singleDateInput.removeAttribute('required');
+        startDateInput.setAttribute('required', 'required');
+        endDateInput.setAttribute('required', 'required');
+        
+        // Set end date to start date if start date is already set
+        if (singleDateInput.value) {
+          startDateInput.value = singleDateInput.value;
+          endDateInput.value = singleDateInput.value;
+        }
+      } else {
+        singleGroup.style.display = 'block';
+        rangeGroup.style.display = 'none';
+        singleDateInput.setAttribute('required', 'required');
+        startDateInput.removeAttribute('required');
+        endDateInput.removeAttribute('required');
+      }
+
+      onInputsChanged();
+    }
+
+    async function loadBookingForm() {
+      const user = await getCurrentUser();
+      if (!user) {
+        window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const hallId = urlParams.get('hallId');
+      if (!hallId) { window.location.href = '/halls.html'; return; }
+
+      const hall = await getHall(hallId);
+      if (!hall) { window.location.href = '/halls.html'; return; }
+
+      currentHall = hall;
+      displayBookingForm(hall, user);
+    }
+
+    function displayBookingForm(hall, user) {
+      const container = document.getElementById('bookingContent');
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const minDate = tomorrow.toISOString().split('T')[0];
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const preselectedDate = urlParams.get('date') || '';
+
+      container.innerHTML = `
+        <div style="margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem; color: #64748b;">
+           <a href="/hall.html?id=${hall._id}" style="color: inherit; text-decoration: none; font-weight: 500;">
+             ← Back to ${hall.name}
+           </a>
+        </div>
+
+        <h1 style="font-size: 2.2rem; margin-bottom: 2rem;">Confirm and pay</h1>
+
+        <div class="booking-grid">
+          <!-- Left: Form -->
+          <div>
+            <div style="margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 2rem;">
+              <h2 style="font-size: 1.4rem; margin-bottom: 1rem;">Your trip</h2>
+              <form id="bookingForm" onsubmit="submitBooking(event)">
+                <div class="form-group">
+                  <label>
+                    <input type="checkbox" id="multiDayToggle" onchange="toggleMultiDay()" style="margin-right: 0.5rem;">
+                    Book for multiple days
+                  </label>
+                </div>
+                <div class="form-group" id="singleDateGroup">
+                  <label for="eventDate">Event Date</label>
+                  <input type="date" id="eventDate" required min="${minDate}" value="${preselectedDate}" onchange="onInputsChanged()" style="padding: 1rem;">
+                  <small id="availabilityMessage" style="display: block; margin-top: 0.5rem;"></small>
+                </div>
+                <div class="form-group" id="dateRangeGroup" style="display: none;">
+                  <label for="startDate">Start Date</label>
+                  <input type="date" id="startDate" min="${minDate}" onchange="onInputsChanged()" style="padding: 1rem; margin-bottom: 1rem;">
+                  <label for="endDate">End Date</label>
+                  <input type="date" id="endDate" min="${minDate}" onchange="onInputsChanged()" style="padding: 1rem;">
+                  <small id="rangeAvailabilityMessage" style="display: block; margin-top: 0.5rem;"></small>
+                  <small style="display: block; margin-top: 0.5rem; color: var(--text-secondary);">
+                    💡 Multi-day discounts: 2-3 days (5%), 4-6 days (10%), 7+ days (15%)
+                  </small>
+                </div>
+
+                <div class="form-group">
+                  <label for="guestCount">Guests</label>
+                  <input type="number" id="guestCount" placeholder="1" min="1" max="${hall.capacity}" required style="padding: 1rem;" onchange="onInputsChanged()">
+                  <small style="color: #64748b;">Max capacity: ${hall.capacity}</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="eventType">Occasion</label>
+                  <input type="text" id="eventType" placeholder="Birthday, Wedding, etc." value="${hall.category}" style="padding: 1rem;">
+                </div>
+
+                <!-- Optional services / Event package builder -->
+                <div class="form-group">
+                  <label>Optional Services</label>
+                  <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.95rem;">
+                    ${Array.isArray(hall.addons) && hall.addons.length > 0
+          ? hall.addons.map(addon => `
+                          <label style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; border:1px solid var(--border); padding:0.5rem 0.75rem; border-radius:8px;">
+                            <span>
+                              <input type="checkbox" class="addon-checkbox" value="${addon.key}" onchange="onInputsChanged()" />
+                              <span style="margin-left:0.5rem; font-weight:500;">${addon.name}</span>
+                              <span style="display:block; font-size:0.8rem; color:#6b7280;">
+                                ${addon.type === 'per_guest' ? 'Per guest' : 'Per event'}
+                              </span>
+                            </span>
+                            <span>${formatCurrency(addon.price || 0)}</span>
+                          </label>
+                        `).join('')
+          : '<p style="color:#6b7280;">Owner has not configured optional services for this hall.</p>'}
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="specialRequests">Message for Host (Optional)</label>
+                  <textarea id="specialRequests" placeholder="Any special requests..." style="padding: 1rem;"></textarea>
+                </div>
+
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border);">
+                   <h2 style="font-size: 1.4rem; margin-bottom: 1rem;">Pay with</h2>
+                   <div style="border: 1px solid var(--border); border-radius: 8px; padding: 1rem; display: flex; align-items: center; justify-content: space-between;">
+                      <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="font-size: 1.5rem;">💳</span>
+                        <span style="font-weight: 600;">Credit or Debit Card</span>
+                      </div>
+                      <span style="color: #64748b;">Razorpay Secure</span>
+                   </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 2rem;">
+                   <button type="submit" class="btn btn-primary w-full" id="submitBtn" style="padding: 1rem; font-size: 1.1rem;">
+                     Confirm and Pay
+                   </button>
+                   <button type="button" class="btn btn-secondary w-full" id="waitlistBtn" style="padding: 1rem; font-size: 1.1rem; margin-top: 0.5rem; display: none;" onclick="joinWaitlistForDate()">
+                     📋 Join Waitlist
+                   </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Right: Summary Card -->
+          <div>
+            <div style="border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; position: sticky; top: 100px; box-shadow: var(--shadow-sm);">
+               <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
+                  <img src="${hall.images[0]}" style="width: 100px; height: 100px; border-radius: 8px; object-fit: cover;">
+                  <div>
+                    <div style="font-size: 0.9rem; color: #64748b;">${hall.category}</div>
+                    <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">${hall.name}</h3>
+                    <div style="font-size: 0.9rem;">📍 ${hall.location}</div>
+                  </div>
+               </div>
+
+               <h2 style="font-size: 1.4rem; margin-bottom: 1rem;">Price details</h2>
+               <div id="priceBreakdown">
+               <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 1.1rem;">
+                   <span>Base</span>
+                 <span>${formatCurrency(hall.price)}</span>
+               </div>
+                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#6b7280;">
+                   <span>Weekday / Weekend</span>
+                   <span>—</span>
+                 </div>
+                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#6b7280;">
+                   <span>Peak Season</span>
+                   <span>—</span>
+                 </div>
+                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#6b7280;">
+                   <span>Last-minute</span>
+                   <span>—</span>
+                 </div>
+                 <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 0.95rem; color:#6b7280;">
+                   <span>Add-ons</span>
+                   <span>—</span>
+               </div>
+               <div style="display: flex; justify-content: space-between; padding-top: 1rem; border-top: 1px solid var(--border); font-weight: 700; font-size: 1.2rem;">
+                 <span>Total (INR)</span>
+                   <span id="totalAmount">${formatCurrency(hall.price)}</span>
+                 </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // If date pre-selected from hall page, trigger initial checks
+      if (preselectedDate) {
+        onInputsChanged();
+      }
+    }
+
+    async function onInputsChanged() {
+      const dateInput = document.getElementById('eventDate');
+      const startDateInput = document.getElementById('startDate');
+      const endDateInput = document.getElementById('endDate');
+      const guestInput = document.getElementById('guestCount');
+      const message = document.getElementById('availabilityMessage');
+      const rangeMessage = document.getElementById('rangeAvailabilityMessage');
+      const submitBtn = document.getElementById('submitBtn');
+      
+      if (!currentHall) return;
+
+      const guestCount = guestInput && guestInput.value ? parseInt(guestInput.value) : null;
+      const selectedAddons = Array.from(document.querySelectorAll('.addon-checkbox:checked')).map(cb => cb.value);
+
+      if (isMultiDay) {
+        // Multi-day booking
+        if (!startDateInput || !startDateInput.value || !endDateInput || !endDateInput.value) {
+          if (rangeMessage) {
+            rangeMessage.textContent = 'Please select both start and end dates';
+            rangeMessage.style.color = 'var(--text-secondary)';
+          }
+          submitBtn.disabled = true;
+          return;
+        }
+
+        const startDate = startDateInput.value;
+        const endDate = endDateInput.value;
+
+        if (new Date(startDate) > new Date(endDate)) {
+          if (rangeMessage) {
+            rangeMessage.textContent = 'End date must be after start date';
+            rangeMessage.style.color = 'var(--danger)';
+          }
+          submitBtn.disabled = true;
+          return;
+        }
+
+        // Check availability for range
+        const available = await checkAvailability(currentHall._id, startDate, endDate);
+        if (available) {
+          if (rangeMessage) {
+            rangeMessage.style.color = 'var(--success)';
+            rangeMessage.textContent = '✓ All dates available';
+          }
+          submitBtn.disabled = false;
+        } else {
+          if (rangeMessage) {
+            rangeMessage.style.color = 'var(--danger)';
+            rangeMessage.textContent = '✗ Some dates not available';
+          }
+          submitBtn.disabled = true;
+        }
+
+        // Get multi-day pricing
+        const breakdown = await getPriceQuote(currentHall._id, {
+          startDate: startDate,
+          endDate: endDate,
+          guestCount,
+          selectedAddons
+        });
+        if (breakdown) {
+          currentBreakdown = breakdown;
+          updatePriceBreakdownUI(breakdown, true);
+        }
+      } else {
+        // Single date booking
+        if (!dateInput || !dateInput.value) return;
+
+        const available = await checkAvailability(currentHall._id, dateInput.value);
+        const waitlistBtn = document.getElementById('waitlistBtn');
+        
+        if (available) {
+          if (message) {
+            message.style.color = 'var(--success)';
+            message.textContent = '✓ Available';
+          }
+          submitBtn.disabled = false;
+          if (waitlistBtn) waitlistBtn.style.display = 'none';
+        } else {
+          if (message) {
+            message.style.color = 'var(--danger)';
+            message.textContent = '✗ Not Available - Join Waitlist';
+          }
+          submitBtn.disabled = true;
+          if (waitlistBtn) {
+            waitlistBtn.style.display = 'block';
+            waitlistBtn.onclick = () => joinWaitlistForDate(dateInput.value);
+          }
+        }
+
+        // Get single date pricing
+        const breakdown = await getPriceQuote(currentHall._id, {
+          date: dateInput.value,
+          guestCount,
+          selectedAddons
+        });
+        if (breakdown) {
+          currentBreakdown = breakdown;
+          updatePriceBreakdownUI(breakdown, false);
+        }
+      }
+    }
+
+    function updatePriceBreakdownUI(breakdown, isMultiDay = false) {
+      const container = document.getElementById('priceBreakdown');
+      if (!container) return;
+
+      if (isMultiDay && breakdown.days) {
+        // Multi-day breakdown
+        container.innerHTML = `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 1.1rem;">
+            <span>Base Price (${breakdown.days} days)</span>
+            <span>${formatCurrency(breakdown.basePrice || 0)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#6b7280;">
+            <span>Adjustments</span>
+            <span>${formatCurrency(breakdown.adjustments || 0)}</span>
+          </div>
+          ${breakdown.multiDayDiscount > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#10b981;">
+              <span>Multi-day Discount (${breakdown.discountPercentage}%)</span>
+              <span>-${formatCurrency(breakdown.multiDayDiscount)}</span>
+            </div>
+          ` : ''}
+          ${breakdown.addonsTotal > 0 ? `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.95rem; color:#6b7280;">
+              <span>Add-ons</span>
+              <span>+${formatCurrency(breakdown.addonsTotal)}</span>
+            </div>
+          ` : ''}
+          <div style="display: flex; justify-content: space-between; padding-top: 1rem; border-top: 1px solid var(--border); font-weight: 700; font-size: 1.2rem;">
+            <span>Total (INR)</span>
+            <span id="totalAmount">${formatCurrency(breakdown.total || 0)}</span>
+          </div>
+        `;
+      } else {
+        // Single day breakdown (original)
+        const baseRow = container.querySelector('div:first-child');
+        if (baseRow) {
+          baseRow.querySelector('span:nth-child(2)').textContent = formatCurrency(breakdown.basePrice || 0);
+        }
+        const rows = container.querySelectorAll('div');
+        if (rows.length >= 5) {
+          // Weekday/weekend row (2nd row)
+          rows[1].querySelector('span:nth-child(2)').textContent = breakdown.weekdayWeekendAdjustment
+            ? (breakdown.weekdayWeekendAdjustment > 0 ? `+${formatCurrency(breakdown.weekdayWeekendAdjustment)}` : formatCurrency(breakdown.weekdayWeekendAdjustment))
+            : '—';
+          // Peak season (3rd)
+          rows[2].querySelector('span:nth-child(2)').textContent = breakdown.peakSeasonAdjustment
+            ? `+${formatCurrency(breakdown.peakSeasonAdjustment)}`
+            : '—';
+          // Last-minute (4th)
+          rows[3].querySelector('span:nth-child(2)').textContent = breakdown.lastMinuteAdjustment
+            ? (breakdown.lastMinuteAdjustment < 0 ? `${formatCurrency(breakdown.lastMinuteAdjustment)}` : `+${formatCurrency(breakdown.lastMinuteAdjustment)}`)
+            : '—';
+          // Add-ons (5th)
+          rows[4].querySelector('span:nth-child(2)').textContent = breakdown.addonsTotal
+            ? `+${formatCurrency(breakdown.addonsTotal)}`
+            : '—';
+        }
+
+        const totalEl = document.getElementById('totalAmount');
+        if (totalEl) {
+          totalEl.textContent = formatCurrency(breakdown.total || 0);
+        }
+      }
+    }
+
+    async function submitBooking(event) {
+      event.preventDefault();
+      const btn = document.getElementById('submitBtn');
+
+      if (!currentBreakdown || !currentBreakdown.total) {
+        showAlert('Please wait for price calculation', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Processing Payment...';
+
+      try {
+        // 1. Create Order
+        const token = sessionStorage.getItem('token');
+        if (!token) {
+          showAlert('Please login to continue', 'error');
+          setTimeout(() => window.location.href = '/login.html', 1500);
+          return;
+        }
+
+        const orderRes = await fetch('/api/create-razorpay-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            hallId: currentHall._id,
+            amount: currentBreakdown.total
+          })
+        });
+
+        if (orderRes.status === 401 || orderRes.status === 403) {
+          showAlert('Session expired. Please login again.', 'error');
+          sessionStorage.removeItem('token');
+          setTimeout(() => window.location.href = '/login.html', 1500);
+          return;
+        }
+
+        const orderData = await orderRes.json();
+        if (!orderData.success) {
+          throw new Error(orderData.message || 'Failed to create order');
+        }
+
+        // 2. Open Razorpay
+        const options = {
+          "key": orderData.keyId,
+          "amount": orderData.order.amount,
+          "currency": "INR",
+          "name": "Event Hall Booking",
+          "description": `Booking for ${currentHall.name}${isMultiDay ? ' (Multi-day)' : ''}`,
+          "image": "/images/logo.png",
+          "order_id": orderData.order.id,
+          "handler": async function (response) {
+            // 3. Payment Success -> Create Booking
+            const bookingData = {
+              hallId: currentHall._id,
+              eventType: document.getElementById('eventType').value,
+              guestCount: document.getElementById('guestCount').value,
+              specialRequests: document.getElementById('specialRequests').value,
+              selectedAddons: Array.from(document.querySelectorAll('.addon-checkbox:checked')).map(cb => cb.value),
+              paymentId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
+              signature: response.razorpay_signature
+            };
+
+            // Add date or date range
+            if (isMultiDay) {
+              bookingData.startDate = document.getElementById('startDate').value;
+              bookingData.endDate = document.getElementById('endDate').value;
+            } else {
+              bookingData.date = document.getElementById('eventDate').value;
+            }
+
+            const result = await createBooking(bookingData);
+            if (result.success) {
+              window.location.href = '/profile.html';
+            } else {
+              showAlert(result.message || 'Booking creation failed after payment', 'error');
+              btn.disabled = false;
+              btn.textContent = 'Confirm and Pay';
+            }
+          },
+          "prefill": {
+            "name": "", // user name
+            "email": "", // user email
+            "contact": "" // user phone
+          },
+          "theme": {
+            "color": "#3399cc"
+          },
+          "modal": {
+            "ondismiss": function () {
+              btn.disabled = false;
+              btn.textContent = 'Confirm and Pay';
+              showAlert('Payment cancelled', 'info');
+            }
+          }
+        };
+
+        // Fetch Key ID dynamically if possible, or use a placeholder that user must replace
+        // Ideally we should have an endpoint to get the public key, but for now I'll use a placeholder
+        // that the user can verify.
+        // Actually, let's fetch the key from an endpoint I should create?
+        // Or just ask 'razorpay' to be available.
+
+        // Wait, I didn't create a 'get-key' endpoint. I should probably do that or just hardcode if it's test.
+        // But the user has to put their key in .env. I can pass it via an endpoint.
+        // Let's create a quick endpoint for public key in server.js?
+        // Or better yet, since I am editing server.js anyway, I should have added it.
+        // For now, I will use a placeholder 'rzp_test_YOUR_KEY_HERE' and tell the user to replace it or I'll add an endpoint.
+
+        // Actually, I can fetch the key from the backend in the same /api/create-razorpay-order response?
+        // No, that's clean. Let's do that.
+
+        // Wait, I already edited server.js and didn't put the key in the response.
+        // I'll make a second edit to server.js to return the keyId or just add a separate config endpoint.
+        // It's cleaner to add a separate config endpoint.
+
+        const rzp1 = new Razorpay(options);
+        rzp1.on('payment.failed', function (response) {
+          showAlert(response.error.description, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Confirm and Pay';
+        });
+        rzp1.open();
+
+      } catch (error) {
+        console.error(error);
+        showAlert(error.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Confirm and Pay';
+      }
+    }
+
+    async function joinWaitlistForDate(date) {
+      const dateInput = document.getElementById('eventDate');
+      const selectedDate = date || dateInput.value;
+      
+      if (!selectedDate) {
+        showAlert('Please select a date first', 'error');
+        return;
+      }
+
+      const user = await getCurrentUser();
+      if (!user) {
+        window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
+
+      const result = await joinWaitlist(currentHall._id, selectedDate);
+      if (result.success) {
+        showAlert(`Added to waitlist! You are position #${result.waitlist.position}. You'll be notified if the date becomes available.`, 'success');
+        dateInput.value = '';
+        onInputsChanged();
+      } else {
+        showAlert(result.message || 'Failed to join waitlist', 'error');
+      }
+    }
+
+    loadBookingForm();
+  </script>
+</body>
+
+</html>

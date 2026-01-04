@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "hallId": 2,
+    "userId": 4,
+    "date": "2025-12-10",
+    "status": "confirmed",
+    "paymentStatus": "paid",
+    "amount": "1500",
+    "bookedAt": "2025-12-06T16:12:26.328Z"
+  }
+]
